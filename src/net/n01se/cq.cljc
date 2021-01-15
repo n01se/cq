@@ -1,6 +1,25 @@
 (ns net.n01se.cq
   (:require [clojure.java.shell :refer [sh]]))
 
+;; PathExpr
+(defrecord PathExpr [path value])
+
+(defn as-path-expr [x]
+  (if (instance? PathExpr x)
+    x
+    (PathExpr. [] x)))
+
+(defn get-value [x]
+  (if (instance? PathExpr x)
+    (:value x)
+    x))
+
+(defn get-path [x]
+  (if (instance? PathExpr x)
+    (:path x)
+    (throw (str "Invalid path expression: " x))))
+
+;; Testing
 (defonce jq-cache (memoize (fn [jqs] (sh "jq" "-n" jqs))))
 
 (defn check-jq [cq jqs]
@@ -14,8 +33,8 @@
 (defmacro deft [n jq pipe]
   `(def ~(vary-meta n assoc
                     :test `(fn []
-                             (let [cq# (~pipe nil)]
-                               (assert (check-jq cq# ~jq) (str ))
+                             (let [cq# (invoke-value ~pipe nil)]
+                               (assert (check-jq cq# ~jq) (str))
                                cq#)))
      (fn [] ((:test (meta (var ~n)))))))
 
@@ -36,9 +55,8 @@
     (fn? f) (f x)
     :else (throw (ex-info (str "Can't invoke " (pr-str f)) {}))))
 
-(defn paths [f x]
-  "The companion to invoke that returns a sequence of paths"
-  )
+(defn invoke-value [f x]
+  (map get-value (invoke f x)))
 
 (defn pipe [& fns]
   (fn [init]
@@ -48,17 +66,40 @@
 
 (defn comma [& exprs]
   (fn [x]
-    (mapcat #(invoke % x) exprs)))
+    (mapcat #(invoke-value % x) exprs)))
+
+(defn dot [x]
+  (list (as-path-expr x)))
+
+(defn all [x]
+  (let [{:keys [path value]} (as-path-expr x)]
+    (map-indexed (fn [i y] (PathExpr. (conj path i) y)) value)))
+
+(defn path [f]
+  (fn [x]
+    (map get-path (invoke f x))))
 
 (defn my-first [f]
   (fn [x]
-    (list (first (invoke f x)))))
+    (take 1 (invoke-value f x))))
 
-(def dot list)
-;; .[] seq
-;; .   list
+;; .[] all
+;; .   dot
 ;;     (comp list ???)
 
+(deft t15 "[1,2,3] | path(.[])"
+  (pipe [1 2 3]
+        (path all)))
+
+(deft t14 "[1,2,3] | . | .[]"
+  (pipe [1 2 3]
+        dot
+        all))
+
+(deft t13 "1 | . | ."
+  (pipe 1
+        dot
+        dot))
 
 (deft t12 "1 | first([.])"
   (pipe 1
