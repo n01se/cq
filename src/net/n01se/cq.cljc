@@ -1,5 +1,6 @@
 (ns net.n01se.cq
-  (:require [clojure.java.shell :refer [sh]]))
+  (:require [clojure.java.shell :refer [sh]]
+            [clojure.string :as str]))
 
 ;; PathExpr
 (defrecord PathExpr [path value])
@@ -25,7 +26,9 @@
 (defn check-jq [cq jqs]
   (if-not (string? jqs)
     true
-    (let [jq (read-string (str "(" (:out (jq-cache jqs)) ")"))]
+    (let [jq (read-string (str "(" (str/replace (:out (jq-cache jqs))
+                                                "null" "nil")
+                               ")"))]
       (when-not (= cq jq)
         (prn :expected jq :got cq))
       (= cq jq))))
@@ -41,6 +44,26 @@
 (defn test-here []
   (dorun (map #(%) (keep (comp :test meta val) (ns-publics *ns*))))
   :ok)
+
+;; from https://github.com/clojure/math.combinatorics/blob/61f2a03cc941d68f2d9889b0c0f224e3067d1088/src/main/clojure/clojure/math/combinatorics.cljc#L232-L249
+(defn cartesian-product
+  "All the ways to take one item from each sequence"
+  [& seqs]
+  (let [v-original-seqs (vec seqs)
+        step
+        (fn step [v-seqs]
+          (let [increment
+                (fn [v-seqs]
+                  (loop [i (dec (count v-seqs)), v-seqs v-seqs]
+                    (if (= i -1) nil
+                        (if-let [rst (next (v-seqs i))]
+                          (assoc v-seqs i rst)
+                          (recur (dec i) (assoc v-seqs i (v-original-seqs i)))))))]
+            (when v-seqs
+              (cons (map first v-seqs)
+                    (lazy-seq (step (increment v-seqs)))))))]
+    (when (every? seq seqs)
+      (lazy-seq (step v-original-seqs)))))
 
 (def hole (reify Object (toString [_] "hole")))
 
@@ -83,9 +106,41 @@
   (fn [x]
     (take 1 (invoke-value f x))))
 
+(defn my-get [f]
+  (fn [x]
+    (let [xv (get-value x)]
+      (map #(get xv %) (invoke-value f xv)))))
+
+(defn plus [& fs]
+  (fn [x]
+    (map #(apply + (reverse %))
+         (apply cartesian-product (reverse (map #(invoke-value % x) fs))))))
+
+(defn minus [& fs]
+  (fn [x]
+    (map #(apply - (reverse %))
+         (apply cartesian-product (reverse (map #(invoke-value % x) fs))))))
+
 ;; .[] all
 ;; .   dot
-;;     (comp list ???)
+
+(deft t19 "(1,2) - (10,20) - (100,200)"
+  (minus (comma 1 2)
+         (comma 10 20)
+         (comma 100 200)))
+
+(deft t18 "(1,2) + (10,20) + (100,200)"
+  (plus (comma 1 2)
+        (comma 10 20)
+        (comma 100 200)))
+
+(deft t17 "[1,2,3],[4,5,6],[7,8,9] | .[1,2]"
+  (pipe (comma [1 2 3] [4 5 6] [7 8 9])
+        (my-get (comma 1 2))))
+
+(deft t16 "[1,2,3],[4,5,6],[7,8,9] | .[.[]]"
+  (pipe (comma [1 2 3] [4 5 6] [7 8 9])
+        (my-get all)))
 
 (deft t15 "[1,2,3] | path(.[])"
   (pipe [1 2 3]
@@ -111,27 +166,29 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (pipe [1 2 3]
-        (my-first (pipe seq (comp list #(+ % 1))))))
+        (my-first (pipe
+                   all
+                   (plus dot 1)))))
 
 (deft t9 "[1,2,3] | first(.[])"
   (pipe [1 2 3]
-        (my-first seq)))
+        (my-first all)))
 
 (deft t8 "[[1],[2],[3]] | .[] | .[0]"
   (pipe (comma [[1] [2] [3]])
-        seq
-        (comp list #(nth % 0))))
+        all
+        (my-get 0)))
 
 (deft t7 "[1,2,3] | .[]"
-  (pipe (comma [1 2 3]) seq))
+  (pipe (comma [1 2 3]) all))
 
 (deft t6 "1,2,3 | 99,empty,.+1"
   (pipe (comma 1 2 3)
-        (comma 99 hole (comp list inc))))
+        (comma 99 hole (plus dot 1))))
 
 (deft t5 "1,2,3 | 99,.+1"
   (pipe (comma 1 2 3)
-        (comma 99 (comp list inc))))
+        (comma 99 (plus dot 1))))
 
 (deft t4 "1,2,3 | 99,."
   (pipe (comma 1 2 3)
@@ -143,12 +200,12 @@
 
 (deft t2 "1,empty,3 | . + 1"
   (pipe (comma 1 hole 3)
-        (comp list #(+ % 1))))
+        (plus dot 1)))
 
 (deft t1 "[1,2,3] | first"
-  (pipe (comma [1 2 3])
-        (comp list first)))
+  (pipe [1 2 3]
+        (my-get 0)))
 
 (deft t0 "1,2,3 | . + 1"
   (pipe (comma 1 2 3)
-        (comp list inc)))
+        (plus dot 1)))
