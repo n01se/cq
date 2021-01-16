@@ -106,23 +106,26 @@
   (fn [x]
     (take 1 (invoke-value f x))))
 
-(defn my-get [f]
-  (fn [x]
-    (let [xv (get-value x)]
-      (map #(get xv %) (invoke-value f xv)))))
+(defn lift [f & [{:keys [apply-dot?]}]]
+  (fn lifted [& fs]
+    (fn eval-lift [x]
+      (map #(apply f (cond-> (reverse %)
+                       apply-dot? (conj (get-value x))))
+           (apply cartesian-product (reverse (map #(invoke-value % x) fs)))))))
 
-(defn plus [& fs]
-  (fn [x]
-    (map #(apply + (reverse %))
-         (apply cartesian-product (reverse (map #(invoke-value % x) fs))))))
-
-(defn minus [& fs]
-  (fn [x]
-    (map #(apply - (reverse %))
-         (apply cartesian-product (reverse (map #(invoke-value % x) fs))))))
+(def my-get (lift get {:apply-dot? true}))
+(def times (lift *))
+(def plus (lift +))
+(def minus (lift -))
 
 ;; .[] all
 ;; .   dot
+
+(deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
+  (pipe 5
+        (minus (comma (times 1 dot) 2)
+               (comma (times 10 dot) 20)
+               (comma (times 100 dot) 200))))
 
 (deft t19 "(1,2) - (10,20) - (100,200)"
   (minus (comma 1 2)
