@@ -1,5 +1,6 @@
 (ns net.n01se.cq
-  (:require [clojure.java.shell :refer [sh]]
+  (:require [cheshire.core :as json]
+            [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
 ;; PathExpr
@@ -21,14 +22,12 @@
     (throw (str "Invalid path expression: " x))))
 
 ;; Testing
-(defonce jq-cache (memoize (fn [jqs] (sh "jq" "-n" jqs))))
+(defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
 
 (defn check-jq [cq jqs]
   (if-not (string? jqs)
     true
-    (let [jq (read-string (str "(" (str/replace (:out (jq-cache jqs))
-                                                "null" "nil")
-                               ")"))]
+    (let [jq (map json/parse-string (str/split (:out (jq-cache jqs)) #"\n"))]
       (when-not (= cq jq)
         (prn :expected jq :got cq))
       (= cq jq))))
