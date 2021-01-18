@@ -19,7 +19,7 @@
 (defn get-path [x]
   (if (instance? PathExpr x)
     (:path x)
-    (throw (str "Invalid path expression: " x))))
+    (throw (ex-info (str "Invalid path expression: " x) {:path x}))))
 
 ;; Testing
 (defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
