@@ -3,7 +3,7 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
-;; PathExpr
+;; PathExpr  ;; rename to PathValue
 (defrecord PathExpr [path value])
 
 (defn as-path-expr [x]
@@ -63,7 +63,7 @@
     (= f hole)  (list hole)
     (number? f) (list f)
     (string? f) (list f)
-    (vector? f) (list (vec ((apply comma f) x)))
+    (vector? f) (list (vec (invoke-value (apply comma f) x)))
     (fn? f) (f x)
     :else (throw (ex-info (str "Can't invoke " (pr-str f)) {}))))
 
@@ -78,7 +78,7 @@
 
 (defn comma [& exprs]
   (fn [x]
-    (mapcat #(invoke-value % x) exprs)))
+    (mapcat #(invoke % x) exprs)))
 
 (defn dot [x]
   (list (as-path-expr x)))
@@ -109,18 +109,49 @@
 (def plus (lift +))
 (def minus (lift -))
 
-(defn my-get [i]
+(defn conj-path [x path-elem new-value]
+  (let [old-path (if (instance? PathExpr x)
+                   (:path x)
+                   [])]
+    (PathExpr. (conj old-path path-elem) new-value)))
+
+(defn my-get [idx-fn]
   (fn [x]
-    (map #(get (get-value x) %) (invoke-value i x))))
+    (let [path-elems (invoke-value idx-fn x)]
+      (map #(conj-path x % (get (get-value x) %))
+           path-elems))))
+
+(defn my-update-in [path-expr value-expr]
+  (fn [x]
+    (list
+     (reduce
+      (fn [x {:keys [path value]}]
+        ;; some versions before jq-1.6 use `last` instead of `first`:
+        (let [deep-value (get-value (first (invoke value-expr value)))]
+          (assoc-in x path deep-value)))
+      x
+      (invoke path-expr x)))))
 
 ;; .[] all
 ;; .   dot
+;; |=  my-update-in
+
+(deft t24 "[1,2,3] | (.[0],.[1]) |= .*2"
+  (pipe [1 2 3]
+        (my-update-in (comma (my-get 0) (my-get 1))
+                      (times dot 2))))
+
+(deft t23 "[4,5,6] | .[0,1]"
+  (pipe [4 5 6] (my-get (comma 0 1))))
+
+(deft t22 "path(.[0] | .[1] | .[2])"
+  (path (pipe (my-get 0)
+              (my-get 1)
+              (my-get 2))))
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
-  (comma [0 [[6]]])
-  #_
   (pipe [0 [[1]]]
-        (my-update
+        (my-update-in
          (pipe (my-get 1) (my-get 0) (my-get 0))
          (plus dot 5))))
 
