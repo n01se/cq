@@ -44,34 +44,15 @@
   (dorun (map #(%) (keep (comp :test meta val) (ns-publics *ns*))))
   :ok)
 
-;; Claggett's cartesian-product, produces things in a different order:
-(defn cartesian-product [colls]
+(defn cartesian-product
+  "All the ways to take one item from each sequence"
+  [colls]
   (reduce (fn [products coll]
             (for [product products
                   value coll]
               (conj product value)))
           [()]
-          colls))
-
-;; from https://github.com/clojure/math.combinatorics/blob/61f2a03cc941d68f2d9889b0c0f224e3067d1088/src/main/clojure/clojure/math/combinatorics.cljc#L232-L249
-(defn cartesian-product
-  "All the ways to take one item from each sequence"
-  [& seqs]
-  (let [v-original-seqs (vec seqs)
-        step
-        (fn step [v-seqs]
-          (let [increment
-                (fn [v-seqs]
-                  (loop [i (dec (count v-seqs)), v-seqs v-seqs]
-                    (if (= i -1) nil
-                        (if-let [rst (next (v-seqs i))]
-                          (assoc v-seqs i rst)
-                          (recur (dec i) (assoc v-seqs i (v-original-seqs i)))))))]
-            (when v-seqs
-              (cons (map first v-seqs)
-                    (lazy-seq (step (increment v-seqs)))))))]
-    (when (every? seq seqs)
-      (lazy-seq (step v-original-seqs)))))
+          (reverse colls)))
 
 (def hole (reify Object (toString [_] "hole")))
 
@@ -114,20 +95,34 @@
   (fn [x]
     (take 1 (invoke-value f x))))
 
-(defn lift [f & [{:keys [apply-dot?]}]]
+(defn my-update [fa fb]
+  (fn [x]
+    (update-in x ((path fa) x) (fn [x] (invoke-value fb x)))))
+
+(defn lift [f]
   (fn lifted [& fs]
     (fn eval-lift [x]
-      (map #(apply f (cond-> (reverse %)
-                       apply-dot? (conj (get-value x))))
-           (apply cartesian-product (reverse (map #(invoke-value % x) fs)))))))
+      (map #(apply f %)
+           (cartesian-product (map #(invoke-value % x) fs))))))
 
-(def my-get (lift get {:apply-dot? true}))
 (def times (lift *))
 (def plus (lift +))
 (def minus (lift -))
 
+(defn my-get [i]
+  (fn [x]
+    (map #(get (get-value x) %) (invoke-value i x))))
+
 ;; .[] all
 ;; .   dot
+
+(deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
+  (comma [0 [[6]]])
+  #_
+  (pipe [0 [[1]]]
+        (my-update
+         (pipe (my-get 1) (my-get 0) (my-get 0))
+         (plus dot 5))))
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
   (pipe 5
