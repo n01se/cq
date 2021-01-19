@@ -44,6 +44,15 @@
   (dorun (map #(%) (keep (comp :test meta val) (ns-publics *ns*))))
   :ok)
 
+;; Claggett's cartesian-product, produces things in a different order:
+(defn cartesian-product [colls]
+  (reduce (fn [products coll]
+            (for [product products
+                  value coll]
+              (conj product value)))
+          [()]
+          colls))
+
 ;; from https://github.com/clojure/math.combinatorics/blob/61f2a03cc941d68f2d9889b0c0f224e3067d1088/src/main/clojure/clojure/math/combinatorics.cljc#L232-L249
 (defn cartesian-product
   "All the ways to take one item from each sequence"
