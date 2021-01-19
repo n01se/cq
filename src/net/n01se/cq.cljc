@@ -3,8 +3,8 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
-;; PathExpr  ;; rename to PathValue
-(defrecord PathExpr [path value])
+;; Path+Value
+(defrecord Path+Value [path value])
 
 (defn as-path-expr [x]
   (if (instance? PathExpr x)
@@ -91,11 +91,11 @@
   (fn [x]
     (map get-path (invoke f x))))
 
-(defn my-first [f]
+(defn cq-first [f]
   (fn [x]
     (take 1 (invoke-value f x))))
 
-(defn my-update [fa fb]
+(defn cq-update [fa fb]
   (fn [x]
     (update-in x ((path fa) x) (fn [x] (invoke-value fb x)))))
 
@@ -115,13 +115,13 @@
                    [])]
     (PathExpr. (conj old-path path-elem) new-value)))
 
-(defn my-get [idx-fn]
+(defn cq-get [idx-fn]
   (fn [x]
     (let [path-elems (invoke-value idx-fn x)]
       (map #(conj-path x % (get (get-value x) %))
            path-elems))))
 
-(defn my-update-in [path-expr value-expr]
+(defn cq-update-in [path-expr value-expr]
   (fn [x]
     (list
      (reduce
@@ -134,25 +134,25 @@
 
 ;; .[] all
 ;; .   dot
-;; |=  my-update-in
+;; |=  cq-update-in
 
 (deft t24 "[1,2,3] | (.[0],.[1]) |= .*2"
   (pipe [1 2 3]
-        (my-update-in (comma (my-get 0) (my-get 1))
+        (cq-update-in (comma (cq-get 0) (cq-get 1))
                       (times dot 2))))
 
 (deft t23 "[4,5,6] | .[0,1]"
-  (pipe [4 5 6] (my-get (comma 0 1))))
+  (pipe [4 5 6] (cq-get (comma 0 1))))
 
 (deft t22 "path(.[0] | .[1] | .[2])"
-  (path (pipe (my-get 0)
-              (my-get 1)
-              (my-get 2))))
+  (path (pipe (cq-get 0)
+              (cq-get 1)
+              (cq-get 2))))
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
   (pipe [0 [[1]]]
-        (my-update-in
-         (pipe (my-get 1) (my-get 0) (my-get 0))
+        (cq-update-in
+         (pipe (cq-get 1) (cq-get 0) (cq-get 0))
          (plus dot 5))))
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
@@ -173,11 +173,11 @@
 
 (deft t17 "[1,2,3],[4,5,6],[7,8,9] | .[1,2]"
   (pipe (comma [1 2 3] [4 5 6] [7 8 9])
-        (my-get (comma 1 2))))
+        (cq-get (comma 1 2))))
 
 (deft t16 "[1,2,3],[4,5,6],[7,8,9] | .[.[]]"
   (pipe (comma [1 2 3] [4 5 6] [7 8 9])
-        (my-get all)))
+        (cq-get all)))
 
 (deft t15 "[1,2,3] | path(.[])"
   (pipe [1 2 3]
@@ -195,7 +195,7 @@
 
 (deft t12 "1 | first([.])"
   (pipe 1
-        (my-first [dot])))
+        (cq-first [dot])))
 
 (deft t11 "1,2,3 | [4,.]"
   (pipe (comma 1 2 3)
@@ -203,18 +203,18 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (pipe [1 2 3]
-        (my-first (pipe
+        (cq-first (pipe
                    all
                    (plus dot 1)))))
 
 (deft t9 "[1,2,3] | first(.[])"
   (pipe [1 2 3]
-        (my-first all)))
+        (cq-first all)))
 
 (deft t8 "[[1],[2],[3]] | .[] | .[0]"
   (pipe (comma [[1] [2] [3]])
         all
-        (my-get 0)))
+        (cq-get 0)))
 
 (deft t7 "[1,2,3] | .[]"
   (pipe (comma [1 2 3]) all))
@@ -241,7 +241,7 @@
 
 (deft t1 "[1,2,3] | first"
   (pipe [1 2 3]
-        (my-get 0)))
+        (cq-get 0)))
 
 (deft t0 "1,2,3 | . + 1"
   (pipe (comma 1 2 3)
