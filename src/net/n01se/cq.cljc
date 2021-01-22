@@ -135,6 +135,35 @@
       (get-value x)
       (invoke path-expr (reroot-path x))))))
 
+(comment
+  ;; EXPERIMENTAL dynamically rooted paths
+  (defn rooted [x]
+    (list (reroot-path x)))
+
+  (defn rooted-path [x]
+    (list (get-path x)))
+
+  (defn rooted-update-in [value-expr]
+    (fn [x]
+      (prn :x x :xval (get-value x))
+      (list
+       (reduce
+        (fn [x {:keys [path value]}]
+          ;; some versions before jq-1.6 use `last` instead of `first`:
+          (let [deep-value (get-value (first (invoke value-expr value)))]
+            (assoc-in x path deep-value)))
+        (get-value x)
+        x))))
+
+  (deft t30 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
+    (pipe [[5]]
+          rooted
+          (cq-get 0)
+          (cq-get 0)
+          (comma
+           rooted-path
+           (rooted-update-in (plus dot 1))))))
+
 ;; .[] all
 ;; .   dot
 ;; |=  cq-update-in
