@@ -16,6 +16,9 @@
     (:value x)
     x))
 
+(defn reroot-path [x]
+  (as-path-expr (get-value x)))
+
 (defn get-path [x]
   (if (instance? PathExpr x)
     (:path x)
@@ -89,7 +92,7 @@
 
 (defn path [f]
   (fn [x]
-    (map get-path (invoke f x))))
+    (map get-path (invoke f (reroot-path x)))))
 
 (defn cq-first [f]
   (fn [x]
@@ -129,12 +132,28 @@
         ;; some versions before jq-1.6 use `last` instead of `first`:
         (let [deep-value (get-value (first (invoke value-expr value)))]
           (assoc-in x path deep-value)))
-      x
-      (invoke path-expr x)))))
+      (get-value x)
+      (invoke path-expr (reroot-path x))))))
 
 ;; .[] all
 ;; .   dot
 ;; |=  cq-update-in
+
+(deft t27 "[[7],[8],[9]] | .[] |= ( .[] |= .+1 )"
+  (pipe [[7] [8] [9]]
+        (cq-update-in all
+                      (cq-update-in all
+                                    (plus dot 1)))))
+
+(deft t26 "[[7],[8],[9]] | (.[] | .[0]) |= .+1"
+  (pipe [[7] [8] [9]]
+        (cq-update-in (pipe all (cq-get 0))
+                      (plus dot 1))))
+
+(deft t25 "[[7],[8],[9]] | .[] | .[0] |= .+1"
+  (pipe [[7] [8] [9]]
+        all
+        (cq-update-in (cq-get 0) (plus dot 1))))
 
 (deft t24 "[1,2,3] | (.[0],.[1]) |= .*2"
   (pipe [1 2 3]
