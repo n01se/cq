@@ -6,6 +6,7 @@
 ;; ValuePath
 (defprotocol IValuePath
   (get-value [_])
+  (get-root [_])
   (get-path [_])
   (as-path-expr [_])
   (conj-path [x path-elem]))
@@ -13,12 +14,14 @@
 (defrecord ValuePath [root-value path]
   IValuePath
   (get-value [x] (get-in root-value path))
+  (get-root [x] root-value)
   (get-path [x] path)
   (as-path-expr [x] x)
   (conj-path [x path-elem] (ValuePath. root-value (conj path path-elem))))
 
 (def DefaultIValuePath
   {:get-value identity
+   :get-root #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
    :get-path #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
    :as-path-expr #(ValuePath. % [])
    :conj-path (fn [x path-elem] (ValuePath. x [path-elem]))})
@@ -133,34 +136,54 @@
       (get-value x)
       (invoke path-expr (reroot-path x))))))
 
-(comment
-  ;; EXPERIMENTAL dynamically rooted paths
-  (defn rooted [x]
-    (list (reroot-path x)))
 
-  (defn rooted-path [x]
-    (list (get-path x)))
+;; EXPERIMENTAL dynamically rooted paths
+(defn rooted [x]
+  (list (reroot-path x)))
 
-  (defn rooted-update-in [value-expr]
-    (fn [x]
-      (prn :x x :xval (get-value x))
-      (list
-       (reduce
-        (fn [x {:keys [path value]}]
-          ;; some versions before jq-1.6 use `last` instead of `first`:
-          (let [deep-value (get-value (first (invoke value-expr value)))]
-            (assoc-in x path deep-value)))
-        (get-value x)
-        x))))
+(defn rooted-path [x]
+  (list (get-path x)))
 
-  (deft t30 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
-    (pipe [[5]]
-          rooted
-          (cq-get 0)
-          (cq-get 0)
-          (comma
-           rooted-path
-           (rooted-update-in (plus dot 1))))))
+(defn rooted-update-in [value-expr]
+  (fn [x]
+    (list
+     (let [deep-value (get-value (first (invoke value-expr x)))]
+       (assoc-in (get-root x) (get-path x) deep-value)))))
+
+(deft t31
+  "[0],[3,4],[1],[2,5]" ;; is this right?
+  #_"def f(p): path(p),p |= .+1; [2,4] | f(.[0,1])"  ;; or this?
+  (pipe [2 4]
+        (comma (cq-get 0) (cq-get 1))
+        (comma rooted-path
+               (rooted-update-in (plus dot 1)))))
+
+(deft t30 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
+  (pipe (comma [[1]] [[5]])
+        (cq-get 0)
+        rooted
+        (cq-get 0)
+        (comma
+         rooted-path
+         (rooted-update-in (plus dot 1)))))
+
+(deft t29 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
+  (pipe (comma [[1]] [[5]])
+        rooted
+        (cq-get 0)
+        (cq-get 0)
+        (comma
+         rooted-path
+         (rooted-update-in (plus dot 1)))))
+
+(deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
+  (pipe [[5]]
+        rooted
+        (cq-get 0)
+        (cq-get 0)
+        (comma
+         rooted-path
+         (rooted-update-in (plus dot 1)))))
 
 ;; .[] all
 ;; .   dot
@@ -182,9 +205,9 @@
         all
         (cq-update-in (cq-get 0) (plus dot 1))))
 
-(deft t24 "[1,2,3] | (.[0],.[1]) |= .*2"
+(deft t24 "[1,2,3] | (.[0,1]) |= .*2"
   (pipe [1 2 3]
-        (cq-update-in (comma (cq-get 0) (cq-get 1))
+        (cq-update-in (cq-get (comma 0 1))
                       (times dot 2))))
 
 (deft t23 "[4,5,6] | .[0,1]"
