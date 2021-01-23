@@ -3,8 +3,8 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
-;; Path+Value
-(defrecord Path+Value [path value])
+;; PathExpr
+(defrecord PathExpr [path value])
 
 (defn as-path-expr [x]
   (if (instance? PathExpr x)
@@ -23,6 +23,12 @@
   (if (instance? PathExpr x)
     (:path x)
     (throw (ex-info (str "Invalid path expression: " x) {:path x}))))
+
+(defn conj-path [x path-elem new-value]
+  (let [old-path (if (instance? PathExpr x)
+                   (:path x)
+                   [])]
+    (PathExpr. (conj old-path path-elem) new-value)))
 
 ;; Testing
 (defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
@@ -60,6 +66,7 @@
 (def hole (reify Object (toString [_] "hole")))
 
 (declare comma)
+(declare invoke-value)
 
 (defn invoke [f x]
   (cond
@@ -87,8 +94,7 @@
   (list (as-path-expr x)))
 
 (defn all [x]
-  (let [{:keys [path value]} (as-path-expr x)]
-    (map-indexed (fn [i y] (PathExpr. (conj path i) y)) value)))
+  (map-indexed (fn [i y] (conj-path x i y)) (get-value x)))
 
 (defn path [f]
   (fn [x]
@@ -111,12 +117,6 @@
 (def times (lift *))
 (def plus (lift +))
 (def minus (lift -))
-
-(defn conj-path [x path-elem new-value]
-  (let [old-path (if (instance? PathExpr x)
-                   (:path x)
-                   [])]
-    (PathExpr. (conj old-path path-elem) new-value)))
 
 (defn cq-get [idx-fn]
   (fn [x]
