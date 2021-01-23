@@ -3,32 +3,31 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
-;; PathExpr
-(defrecord PathExpr [path value])
+;; ValuePath
+(defprotocol IValuePath
+  (get-value [_])
+  (get-path [_])
+  (as-path-expr [_])
+  (conj-path [x path-elem]))
 
-(defn as-path-expr [x]
-  (if (instance? PathExpr x)
-    x
-    (PathExpr. [] x)))
+(defrecord ValuePath [root-value path]
+  IValuePath
+  (get-value [x] (get-in root-value path))
+  (get-path [x] path)
+  (as-path-expr [x] x)
+  (conj-path [x path-elem] (ValuePath. root-value (conj path path-elem))))
 
-(defn get-value [x]
-  (if (instance? PathExpr x)
-    (:value x)
-    x))
+(def DefaultIValuePath
+  {:get-value identity
+   :get-path #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
+   :as-path-expr #(ValuePath. % [])
+   :conj-path (fn [x path-elem] (ValuePath. x [path-elem]))})
+
+(extend nil     IValuePath DefaultIValuePath)
+(extend Object  IValuePath DefaultIValuePath)
 
 (defn reroot-path [x]
   (as-path-expr (get-value x)))
-
-(defn get-path [x]
-  (if (instance? PathExpr x)
-    (:path x)
-    (throw (ex-info (str "Invalid path expression: " x) {:path x}))))
-
-(defn conj-path [x path-elem new-value]
-  (let [old-path (if (instance? PathExpr x)
-                   (:path x)
-                   [])]
-    (PathExpr. (conj old-path path-elem) new-value)))
 
 ;; Testing
 (defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
@@ -94,7 +93,7 @@
   (list (as-path-expr x)))
 
 (defn all [x]
-  (map-indexed (fn [i y] (conj-path x i y)) (get-value x)))
+  (map-indexed (fn [i y] (conj-path x i)) (get-value x)))
 
 (defn path [f]
   (fn [x]
@@ -121,17 +120,16 @@
 (defn cq-get [idx-fn]
   (fn [x]
     (let [path-elems (invoke-value idx-fn x)]
-      (map #(conj-path x % (get (get-value x) %))
-           path-elems))))
+      (map #(conj-path x %) path-elems))))
 
 (defn cq-update-in [path-expr value-expr]
   (fn [x]
     (list
      (reduce
-      (fn [x {:keys [path value]}]
+      (fn [x value-path]
         ;; some versions before jq-1.6 use `last` instead of `first`:
-        (let [deep-value (get-value (first (invoke value-expr value)))]
-          (assoc-in x path deep-value)))
+        (let [deep-value (get-value (first (invoke value-expr value-path)))]
+          (assoc-in x (get-path value-path) deep-value)))
       (get-value x)
       (invoke path-expr (reroot-path x))))))
 
