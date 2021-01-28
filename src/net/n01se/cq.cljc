@@ -124,6 +124,12 @@
   (fn [x]
     (update-in x ((path fa) x) (fn [x] (invoke-value fb x)))))
 
+(defmacro cq-let [[sym sym-expr] expr]
+  `(fn cq-let# [x#]
+     (let [value# (invoke ~sym-expr x#)
+           ~sym (constantly value#)]
+       (invoke ~expr x#))))
+
 (defn lift [f]
   (fn lifted [& fs]
     (fn eval-lift [x]
@@ -164,7 +170,7 @@
      (let [deep-value (get-value (first (invoke value-expr x)))]
        (assoc-in (get-root x) (get-path x) deep-value)))))
 
-(deft t31
+(deft tx3
   "[0],[3,4],[1],[2,5]" ;; is this right?
   #_"def f(p): [p] | path(.[]),(.[] |= .+1); [2,4] | f(.[0,1])"  ;; or this? [0] [1] [3 5]
   (pipe [2 4]
@@ -173,7 +179,7 @@
         (comma rooted-path
                (rooted-update-in (plus dot 1)))))
 
-(deft t30 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
+(deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
   (pipe (comma [[1]] [[5]])
         (cq-get 0)
         rooted
@@ -182,7 +188,7 @@
          rooted-path
          (rooted-update-in (plus dot 1)))))
 
-(deft t29 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
+(deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
   (pipe (comma [[1]] [[5]])
         rooted
         (cq-get 0)
@@ -191,7 +197,7 @@
          rooted-path
          (rooted-update-in (plus dot 1)))))
 
-(deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
+(deft tx0 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (pipe [[5]]
         rooted
         (cq-get 0)
@@ -203,6 +209,36 @@
 ;; .[] all
 ;; .   dot
 ;; |=  cq-update-in
+
+
+(deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
+  (cq-let [addvalue (fn [f]
+                   (cq-let [$x f]
+                           (pipe all [((lift concat) dot $x)])))]
+          (pipe [[1,2],[10,20]]
+                (addvalue (cq-get 0)))))
+
+(deft t32 "def foo(f): f|f; 5|foo(.*2)"
+  (let [foo (fn [f] (pipe f f))]
+    (pipe 5 (foo (times dot 2)))))
+
+(deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
+  (pipe [3 4]
+        (cq-let [$a [all 9]]
+                (comma all (pipe $a all)))))
+
+(deft t30  "(1,2,3) as $a | $a + 1"
+  (cq-let [$a (comma 1 2 3)]
+          (plus $a 1)))
+
+(deft t29 "5 as $a | $a"
+  (cq-let [$a 5] $a))
+
+(deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
+  (let [f (fn [p] (comma (path p)
+                         (cq-update-in p (plus dot 1))))]
+    (pipe [[5]]
+          (f (pipe (cq-get 0) (cq-get 0))))))
 
 (deft t27 "[[7],[8],[9]] | .[] |= ( .[] |= .+1 )"
   (pipe [[7] [8] [9]]
