@@ -40,18 +40,27 @@
 ;; Testing
 (defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
 
+(defn parse-jq-out [string]
+  (map json/parse-string (str/split string #"\n")))
+
+(defn jq [string]
+  (let [{:keys [out err exit]} (jq-cache string)]
+    (when (not (zero? exit))
+      (throw (Exception. err)))
+    (parse-jq-out out)))
+
 (defn check-jq [cq jqs]
   (if-not (string? jqs)
     true
-    (let [jq (map json/parse-string (str/split (:out (jq-cache jqs)) #"\n"))]
-      (when-not (= cq jq)
-        (prn :expected jq :got cq))
-      (= cq jq))))
+    (let [jq-out (jq jqs)]
+      (when-not (= cq jq-out)
+        (prn :expected jq-out :got cq))
+      (= cq jq-out))))
 
-(defmacro deft [n jq pipe]
+(defmacro deft [n jq expr]
   `(def ~(vary-meta n assoc
                     :test `(fn []
-                             (let [cq# (invoke-value ~pipe nil)]
+                             (let [cq# (invoke-value ~expr nil)]
                                (assert (check-jq cq# ~jq) (str))
                                cq#)))
      (fn [] ((:test (meta (var ~n)))))))
