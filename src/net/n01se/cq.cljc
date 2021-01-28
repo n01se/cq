@@ -5,32 +5,37 @@
 
 ;; ValuePath
 (defprotocol IValuePath
-  (get-value [_])
-  (get-root [_])
-  (get-path [_])
-  (as-path-expr [_])
-  (conj-path [x path-elem]))
+  (get-value [_] "Return the resolved, normal Clojure value")
+  (get-root [_] "Return the root, normal Clojure value. Throw if not ValuePath")
+  (get-path [_] "Return the path vector")
+  (update-path* [x f args]
+    "Return ValuePath with same root as x and path of (apply f old-path args).
+     If x is not a ValuePath, return a ValuePath rooted at x with value x"))
 
 (defrecord ValuePath [root-value path]
   IValuePath
   (get-value [x] (get-in root-value path))
   (get-root [x] root-value)
   (get-path [x] path)
-  (as-path-expr [x] x)
-  (conj-path [x path-elem] (ValuePath. root-value (conj path path-elem))))
+  (update-path* [x f args] (ValuePath. root-value (apply f path args))))
 
 (def DefaultIValuePath
   {:get-value identity
    :get-root #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
    :get-path #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
-   :as-path-expr #(ValuePath. % [])
-   :conj-path (fn [x path-elem] (ValuePath. x [path-elem]))})
+   :update-path* (fn [x f args] (ValuePath. x (apply f [] args)))})
 
 (extend nil     IValuePath DefaultIValuePath)
 (extend Object  IValuePath DefaultIValuePath)
 
+(defn update-path [x f & args]
+  (update-path* x f args))
+
+(defn as-value-path [x]
+  (update-path x identity))
+
 (defn reroot-path [x]
-  (as-path-expr (get-value x)))
+  (as-value-path (get-value x)))
 
 ;; Testing
 (defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
@@ -93,10 +98,10 @@
     (mapcat #(invoke % x) exprs)))
 
 (defn dot [x]
-  (list (as-path-expr x)))
+  (list (as-value-path x)))
 
 (defn all [x]
-  (map-indexed (fn [i y] (conj-path x i)) (get-value x)))
+  (map-indexed (fn [i y] (update-path x conj i)) (get-value x)))
 
 (defn path [f]
   (fn [x]
@@ -123,7 +128,7 @@
 (defn cq-get [idx-fn]
   (fn [x]
     (let [path-elems (invoke-value idx-fn x)]
-      (map #(conj-path x %) path-elems))))
+      (map #(update-path x conj %) path-elems))))
 
 (defn cq-update-in [path-expr value-expr]
   (fn [x]
@@ -152,9 +157,10 @@
 
 (deft t31
   "[0],[3,4],[1],[2,5]" ;; is this right?
-  #_"def f(p): path(p),p |= .+1; [2,4] | f(.[0,1])"  ;; or this?
+  #_"def f(p): [p] | path(.[]),(.[] |= .+1); [2,4] | f(.[0,1])"  ;; or this? [0] [1] [3 5]
   (pipe [2 4]
-        (comma (cq-get 0) (cq-get 1))
+        rooted
+        (cq-get (comma 0 1))
         (comma rooted-path
                (rooted-update-in (plus dot 1)))))
 
