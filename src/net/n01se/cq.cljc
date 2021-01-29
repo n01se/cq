@@ -91,48 +91,67 @@
     (string? f) (list f)
     (vector? f) (list (vec (invoke-value (apply comma f) x)))
     (fn? f) (f x)
+    (nil? f) nil ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str f)) {}))))
 
 (defn invoke-value [f x]
   (map get-value (invoke f x)))
 
+(def tracing false)
+(def ^:dynamic *ffn-depth* 1)
+(defn trace [& args] (apply println (apply str (repeat *ffn-depth* " ")) args))
+
+(defmacro ffn
+  "Exactly like (fn name [args] ...), but asserts the return value is
+  sequential."
+  [name-sym argv & body]
+  (assert (symbol? name-sym))
+  (assert (vector? argv))
+  (assert (= 1 (count argv)))
+  `(fn ~name-sym ~argv
+     (when tracing (trace "Piping" ~(first argv) "into" '~name-sym))
+     (let [result# (binding [*ffn-depth* (inc *ffn-depth*)] (do ~@body))]
+       (when tracing (trace "Return" result# "from" '~name-sym))
+       (assert (sequential? result#)
+               (str ~(str "Non-list returned by " name-sym " for args: ")
+                    (pr-str ~(first argv))))
+       result#)))
+
 (defn pipe [& fns]
-  (fn [init]
+  (ffn ffn-pipe [init]
     (reduce (fn [s f] (remove #(= hole %) (mapcat #(invoke f %) s)))
             (remove #(= hole %) (list init))
             fns)))
 
 (defn comma [& exprs]
-  (fn [x]
-    (mapcat #(invoke % x) exprs)))
+  (ffn ffn-comma [x]
+    (mapcat (ffn ffn-comma-part [y] (invoke y x)) exprs)))
 
-(defn dot [x]
-  (list (as-value-path x)))
+(def dot
+  (ffn ffn-dot [x]
+       (list (as-value-path x))))
 
-(defn all [x]
-  (map-indexed (fn [i y] (update-path x conj i)) (get-value x)))
+(def all
+  (ffn ffn-all [x]
+       (map-indexed (fn [i y] (update-path x conj i)) (get-value x))))
 
 (defn path [f]
-  (fn [x]
+  (ffn ffn-path [x]
     (map get-path (invoke f (reroot-path x)))))
 
 (defn cq-first [f]
-  (fn [x]
+  (ffn ffn-first [x]
     (take 1 (invoke-value f x))))
 
-(defn cq-update [fa fb]
-  (fn [x]
-    (update-in x ((path fa) x) (fn [x] (invoke-value fb x)))))
-
 (defmacro cq-let [[sym sym-expr] expr]
-  `(fn cq-let# [x#]
+  `(fn [x#]
      (let [value# (invoke ~sym-expr x#)
            ~sym (constantly value#)]
        (invoke ~expr x#))))
 
 (defn lift [f]
   (fn lifted [& fs]
-    (fn eval-lift [x]
+    (ffn ffn-lift [x]
       (map #(apply f %)
            (cartesian-product (map #(invoke-value % x) fs))))))
 
@@ -141,31 +160,41 @@
 (def minus (lift -))
 
 (defn cq-get [idx-fn]
-  (fn [x]
+  (ffn ffn-get [x]
     (let [path-elems (invoke-value idx-fn x)]
       (map #(update-path x conj %) path-elems))))
 
 (defn cq-update-in [path-expr value-expr]
-  (fn [x]
+  (ffn ffn-update-in [x]
     (list
      (reduce
-      (fn [x value-path]
+      (fn [acc value-path]
         ;; some versions before jq-1.6 use `last` instead of `first`:
-        (let [deep-value (get-value (first (invoke value-expr value-path)))]
-          (assoc-in x (get-path value-path) deep-value)))
+        (let [deep-value (get-value (first (invoke value-expr value-path)))
+              path (get-path value-path)]
+          (if (empty? path)
+            deep-value ;; c'mon, Clojure!
+            (assoc-in acc path deep-value))))
       (get-value x)
       (invoke path-expr (reroot-path x))))))
 
+(defn select [f]
+  (ffn ffn-select [x]
+       (mapcat #(when % (list x))
+               (invoke-value f x))))
+
 
 ;; EXPERIMENTAL dynamically rooted paths
-(defn rooted [x]
-  (list (reroot-path x)))
+(def rooted
+  (ffn ffn-rooted [x]
+       (list (reroot-path x))))
 
-(defn rooted-path [x]
-  (list (get-path x)))
+(def rooted-path
+  (ffn ffn-rooted-path [x]
+       (list (get-path x))))
 
 (defn rooted-update-in [value-expr]
-  (fn [x]
+  (ffn ffn-rooted-update-in [x]
     (list
      (let [deep-value (get-value (first (invoke value-expr x)))]
        (assoc-in (get-root x) (get-path x) deep-value)))))
@@ -210,9 +239,28 @@
 ;; .   dot
 ;; |=  cq-update-in
 
+(deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
+  #_(comma 6 -2 10 2 -3)
+  (pipe [3 -2 5 1 -3]
+        all
+        (cq-update-in (select ((lift >) dot 0))
+                      ((lift *) dot 2))))
+
+(deft t36  "1,2,3 | select((.*2,.) != 2)"
+  (pipe (comma 1 2 3)
+        (select ((lift not=) (comma (times dot 2) dot) 2))))
+
+(deft t35  "1,2,3 | select(. != 2)"
+  (pipe (comma 1 2 3)
+        (select ((lift not=) dot 2))))
+
+(deft t34 "1,2,3,4,3,2,1 | (if . == 2 then empty else . end)"
+  (pipe (comma 1 2 3 4 3 2 1)
+        (fn [x] (list (if (= x 2) hole x)))))
 
 (deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
-  (cq-let [addvalue (fn [f]
+  ;; TODO: why does this break if we use cq-let instead of the outer let?
+  (let [addvalue (fn [f]
                    (cq-let [$x f]
                            (pipe all [((lift concat) dot $x)])))]
           (pipe [[1,2],[10,20]]
