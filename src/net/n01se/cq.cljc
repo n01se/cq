@@ -143,11 +143,16 @@
   (ffn ffn-first [x]
     (take 1 (invoke-value f x))))
 
-(defmacro cq-let [[sym sym-expr] expr]
-  `(fn [x#]
+(defmacro let-as [[sym sym-expr] expr]
+  `(ffn ~'ffn-let-as [x#]
      (let [value# (invoke ~sym-expr x#)
-           ~sym (constantly value#)]
-       (invoke ~expr x#))))
+           ~sym (constantly value#)
+           result# (invoke ~expr x#)]
+       result#)))
+
+(defmacro let-fn [fnforms expr]
+  `(ffn ~'ffn-let-fn-B [x#]
+        (letfn ~fnforms (invoke ~expr x#))))
 
 (defn lift [f]
   (fn lifted [& fs]
@@ -259,9 +264,7 @@
         (fn [x] (list (if (= x 2) hole x)))))
 
 (deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
-  ;; TODO: why does this break if we use cq-let instead of the outer let?
-  (let [addvalue (fn [f]
-                   (cq-let [$x f]
+  (let-fn [(addvalue [f] (let-as [$x f]
                            (pipe all [((lift concat) dot $x)])))]
           (pipe [[1,2],[10,20]]
                 (addvalue (cq-get 0)))))
@@ -272,15 +275,15 @@
 
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (pipe [3 4]
-        (cq-let [$a [all 9]]
+        (let-as [$a [all 9]]
                 (comma all (pipe $a all)))))
 
 (deft t30  "(1,2,3) as $a | $a + 1"
-  (cq-let [$a (comma 1 2 3)]
+  (let-as [$a (comma 1 2 3)]
           (plus $a 1)))
 
 (deft t29 "5 as $a | $a"
-  (cq-let [$a 5] $a))
+  (let-as [$a 5] $a))
 
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (let [f (fn [p] (comma (path p)
