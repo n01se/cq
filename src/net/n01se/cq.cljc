@@ -84,18 +84,18 @@
 (declare comma)
 (declare invoke-value)
 
-(defn invoke [f x]
+(defn invoke [f topic]
   (cond
     (= f hole)  (list hole)
     (number? f) (list f)
     (string? f) (list f)
-    (vector? f) (list (vec (invoke-value (apply comma f) x)))
-    (fn? f) (f x)
+    (vector? f) (list (vec (invoke-value (apply comma f) topic)))
+    (fn? f) (f topic)
     (nil? f) nil ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str f)) {}))))
 
-(defn invoke-value [f x]
-  (map get-value (invoke f x)))
+(defn invoke-value [f topic]
+  (map get-value (invoke f topic)))
 
 (def tracing false)
 (def ^:dynamic *ffn-depth* 1)
@@ -124,53 +124,53 @@
             fns)))
 
 (defn comma [& exprs]
-  (ffn ffn-comma [x]
-    (mapcat (ffn ffn-comma-part [y] (invoke y x)) exprs)))
+  (ffn ffn-comma [topic]
+    (mapcat (ffn ffn-comma-part [y] (invoke y topic)) exprs)))
 
 (def dot
-  (ffn ffn-dot [x]
-       (list (as-value-path x))))
+  (ffn ffn-dot [topic]
+       (list (as-value-path topic))))
 
 (def all
-  (ffn ffn-all [x]
-       (map-indexed (fn [i y] (update-path x conj i)) (get-value x))))
+  (ffn ffn-all [topic]
+       (map-indexed (fn [i y] (update-path topic conj i)) (get-value topic))))
 
 (defn path [f]
-  (ffn ffn-path [x]
-    (map get-path (invoke f (reroot-path x)))))
+  (ffn ffn-path [topic]
+    (map get-path (invoke f (reroot-path topic)))))
 
 (defn cq-first [f]
-  (ffn ffn-first [x]
-    (take 1 (invoke-value f x))))
+  (ffn ffn-first [topic]
+    (take 1 (invoke-value f topic))))
 
-(defmacro let-as [[sym sym-expr] expr]
-  `(ffn ~'ffn-let-as [x#]
-     (let [value# (invoke ~sym-expr x#)
+(defmacro cq-let [[sym sym-expr] expr]
+  `(ffn ~'ffn-cq-let [topic#]
+     (let [value# (invoke ~sym-expr topic#)
            ~sym (constantly value#)
-           result# (invoke ~expr x#)]
+           result# (invoke ~expr topic#)]
        result#)))
 
-(defmacro let-fn [fnforms expr]
-  `(ffn ~'ffn-let-fn-B [x#]
-        (letfn ~fnforms (invoke ~expr x#))))
+(defmacro cq-letfn [fnforms expr]
+  `(ffn ~'ffn-cq-letfn [topic#]
+        (letfn ~fnforms (invoke ~expr topic#))))
 
 (defn lift [f]
   (fn lifted [& fs]
-    (ffn ffn-lift [x]
+    (ffn ffn-lift [topic]
       (map #(apply f %)
-           (cartesian-product (map #(invoke-value % x) fs))))))
+           (cartesian-product (map #(invoke-value % topic) fs))))))
 
 (def times (lift *))
 (def plus (lift +))
 (def minus (lift -))
 
 (defn cq-get [idx-fn]
-  (ffn ffn-get [x]
-    (let [path-elems (invoke-value idx-fn x)]
-      (map #(update-path x conj %) path-elems))))
+  (ffn ffn-get [topic]
+    (let [path-elems (invoke-value idx-fn topic)]
+      (map #(update-path topic conj %) path-elems))))
 
-(defn cq-update-in [path-expr value-expr]
-  (ffn ffn-update-in [x]
+(defn cq-reset [path-expr value-expr]
+  (ffn ffn-reset [topic]
     (list
      (reduce
       (fn [acc value-path]
@@ -180,29 +180,29 @@
           (if (empty? path)
             deep-value ;; c'mon, Clojure!
             (assoc-in acc path deep-value))))
-      (get-value x)
-      (invoke path-expr (reroot-path x))))))
+      (get-value topic)
+      (invoke path-expr (reroot-path topic))))))
 
 (defn select [f]
-  (ffn ffn-select [x]
-       (mapcat #(when % (list x))
-               (invoke-value f x))))
+  (ffn ffn-select [topic]
+       (mapcat #(when % (list topic))
+               (invoke-value f topic))))
 
 
 ;; EXPERIMENTAL dynamically rooted paths
 (def rooted
-  (ffn ffn-rooted [x]
-       (list (reroot-path x))))
+  (ffn ffn-rooted [topic]
+       (list (reroot-path topic))))
 
 (def rooted-path
-  (ffn ffn-rooted-path [x]
-       (list (get-path x))))
+  (ffn ffn-rooted-path [topic]
+       (list (get-path topic))))
 
-(defn rooted-update-in [value-expr]
-  (ffn ffn-rooted-update-in [x]
+(defn rooted-reset [value-expr]
+  (ffn ffn-rooted-reset [topic]
     (list
-     (let [deep-value (get-value (first (invoke value-expr x)))]
-       (assoc-in (get-root x) (get-path x) deep-value)))))
+     (let [deep-value (get-value (first (invoke value-expr topic)))]
+       (assoc-in (get-root topic) (get-path topic) deep-value)))))
 
 (deft tx3
   "[0],[3,4],[1],[2,5]" ;; is this right?
@@ -211,7 +211,7 @@
         rooted
         (cq-get (comma 0 1))
         (comma rooted-path
-               (rooted-update-in (plus dot 1)))))
+               (rooted-reset (plus dot 1)))))
 
 (deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
   (pipe (comma [[1]] [[5]])
@@ -220,7 +220,7 @@
         (cq-get 0)
         (comma
          rooted-path
-         (rooted-update-in (plus dot 1)))))
+         (rooted-reset (plus dot 1)))))
 
 (deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
   (pipe (comma [[1]] [[5]])
@@ -229,7 +229,7 @@
         (cq-get 0)
         (comma
          rooted-path
-         (rooted-update-in (plus dot 1)))))
+         (rooted-reset (plus dot 1)))))
 
 (deft tx0 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (pipe [[5]]
@@ -238,18 +238,19 @@
         (cq-get 0)
         (comma
          rooted-path
-         (rooted-update-in (plus dot 1)))))
+         (rooted-reset (plus dot 1)))))
 
 ;; .[] all
 ;; .   dot
-;; |=  cq-update-in
+;; =  cq-set
+;; |=  cq-reset
 
 (deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
   #_(comma 6 -2 10 2 -3)
   (pipe [3 -2 5 1 -3]
         all
-        (cq-update-in (select ((lift >) dot 0))
-                      ((lift *) dot 2))))
+        (cq-reset (select ((lift >) dot 0))
+                  ((lift *) dot 2))))
 
 (deft t36  "1,2,3 | select((.*2,.) != 2)"
   (pipe (comma 1 2 3)
@@ -264,10 +265,10 @@
         (fn [x] (list (if (= x 2) hole x)))))
 
 (deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
-  (let-fn [(addvalue [f] (let-as [$x f]
-                           (pipe all [((lift concat) dot $x)])))]
-          (pipe [[1,2],[10,20]]
-                (addvalue (cq-get 0)))))
+  (cq-letfn [(addvalue [f] (cq-let [$x f]
+                                   (pipe all [((lift concat) dot $x)])))]
+            (pipe [[1,2],[10,20]]
+                  (addvalue (cq-get 0)))))
 
 (deft t32 "def foo(f): f|f; 5|foo(.*2)"
   (let [foo (fn [f] (pipe f f))]
@@ -275,42 +276,42 @@
 
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (pipe [3 4]
-        (let-as [$a [all 9]]
+        (cq-let [$a [all 9]]
                 (comma all (pipe $a all)))))
 
 (deft t30  "(1,2,3) as $a | $a + 1"
-  (let-as [$a (comma 1 2 3)]
+  (cq-let [$a (comma 1 2 3)]
           (plus $a 1)))
 
 (deft t29 "5 as $a | $a"
-  (let-as [$a 5] $a))
+  (cq-let [$a 5] $a))
 
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (let [f (fn [p] (comma (path p)
-                         (cq-update-in p (plus dot 1))))]
+                         (cq-reset p (plus dot 1))))]
     (pipe [[5]]
           (f (pipe (cq-get 0) (cq-get 0))))))
 
 (deft t27 "[[7],[8],[9]] | .[] |= ( .[] |= .+1 )"
   (pipe [[7] [8] [9]]
-        (cq-update-in all
-                      (cq-update-in all
-                                    (plus dot 1)))))
+        (cq-reset all
+                  (cq-reset all
+                            (plus dot 1)))))
 
 (deft t26 "[[7],[8],[9]] | (.[] | .[0]) |= .+1"
   (pipe [[7] [8] [9]]
-        (cq-update-in (pipe all (cq-get 0))
-                      (plus dot 1))))
+        (cq-reset (pipe all (cq-get 0))
+                  (plus dot 1))))
 
 (deft t25 "[[7],[8],[9]] | .[] | .[0] |= .+1"
   (pipe [[7] [8] [9]]
         all
-        (cq-update-in (cq-get 0) (plus dot 1))))
+        (cq-reset (cq-get 0) (plus dot 1))))
 
 (deft t24 "[1,2,3] | (.[0,1]) |= .*2"
   (pipe [1 2 3]
-        (cq-update-in (cq-get (comma 0 1))
-                      (times dot 2))))
+        (cq-reset (cq-get (comma 0 1))
+                  (times dot 2))))
 
 (deft t23 "[4,5,6] | .[0,1]"
   (pipe [4 5 6] (cq-get (comma 0 1))))
@@ -322,7 +323,7 @@
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
   (pipe [0 [[1]]]
-        (cq-update-in
+        (cq-reset
          (pipe (cq-get 1) (cq-get 0) (cq-get 0))
          (plus dot 5))))
 
