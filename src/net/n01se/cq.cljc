@@ -117,11 +117,12 @@
                     (pr-str ~(first argv))))
        result#)))
 
+(defn bind [s f]
+  (remove #(= hole %) (mapcat #(invoke f %) s)))
+
 (defn pipe [& fns]
   (ffn ffn-pipe [init]
-    (reduce (fn [s f] (remove #(= hole %) (mapcat #(invoke f %) s)))
-            (remove #(= hole %) (list init))
-            fns)))
+    (reduce bind (remove #(= hole %) (list init)) fns)))
 
 (defn comma [& exprs]
   (ffn ffn-comma [topic]
