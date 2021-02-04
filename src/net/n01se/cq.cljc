@@ -4,6 +4,7 @@
             [clojure.string :as str]))
 
 ;; ValuePath
+;; This is a bit like a writer monad with root as the value and path as the log?
 (defprotocol IValuePath
   (get-value [_] "Return the resolved, normal Clojure value")
   (get-root [_] "Return the root, normal Clojure value. Throw if not ValuePath")
@@ -12,7 +13,11 @@
     "Return ValuePath with same root as x and path of (apply f old-path args).
      If x is not a ValuePath, return a ValuePath rooted at x with value x"))
 
-(defrecord ValuePath [root-value path]
+(deftype ValuePath [root-value path]
+  Object
+  (equals [a b] (and (= (.root-value a) (.root-value b))
+                     (= (.path a) (.path b))))
+
   IValuePath
   (get-value [x] (get-in root-value path))
   (get-root [x] root-value)
@@ -79,14 +84,11 @@
           [()]
           (reverse colls)))
 
-(def hole (reify Object (toString [_] "hole")))
-
 (declare comma)
 (declare invoke-value)
 
 (defn invoke [f topic]
   (cond
-    (= f hole)  (list hole)
     (number? f) (list f)
     (string? f) (list f)
     (vector? f) (list (vec (invoke-value (apply comma f) topic)))
@@ -117,16 +119,23 @@
                     (pr-str ~(first argv))))
        result#)))
 
-(defn bind [s f]
-  (remove #(= hole %) (mapcat #(invoke f %) s)))
+;; There is a list monad at the base of our operations:
+;; ...where "unit" is list and "bind" is mapcat except the arguments are reversed
 
-(defn pipe [& fns]
-  (ffn ffn-pipe [init]
-    (reduce bind (remove #(= hole %) (list init)) fns)))
+;; The list monad is additive, so it also supplies an mzero and mplus
+;; It's mplus would be apply concat
+(defn hole [x] ()) ;; mzero for monadic vals
 
-(defn comma [& exprs]
-  (ffn ffn-comma [topic]
-    (mapcat (ffn ffn-comma-part [y] (invoke y topic)) exprs)))
+(defn pipe [& mfs] ;; variatic monoid-plus over monadic fns
+  (ffn ffn-pipe [x]
+       (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
+               (list x)
+               mfs)))
+
+;; monoid-plus over monadic vals obtained by invoking each mf with x
+(defn comma [& mfs] ;; rename: cq-mapcat ?
+  (ffn ffn-comma [x]
+       (mapcat #(invoke % x) mfs)))
 
 (def dot
   (ffn ffn-dot [topic]
@@ -134,7 +143,11 @@
 
 (def all
   (ffn ffn-all [topic]
-       (map-indexed (fn [i y] (update-path topic conj i)) (get-value topic))))
+       (let [coll (get-value topic)]
+         (assert (coll? coll)
+                 (str "`all` requires a seqable collection, not "
+                      (type coll) ": " (pr-str coll)))
+         (map-indexed (fn [i y] (update-path topic conj i)) coll))))
 
 (defn path [f]
   (ffn ffn-path [topic]
@@ -263,7 +276,7 @@
 
 (deft t34 "1,2,3,4,3,2,1 | (if . == 2 then empty else . end)"
   (pipe (comma 1 2 3 4 3 2 1)
-        (fn [x] (list (if (= x 2) hole x)))))
+        (fn [x] (if (= x 2) () (list x)))))
 
 (deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
   (cq-letfn [(addvalue [f] (cq-let [$x f]

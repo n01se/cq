@@ -1,4 +1,5 @@
-(ns net.n01se.monad)
+(ns net.n01se.monad
+  (:require [net.n01se.cq :as cq]))
 
 (def identity-monad
   [(fn unit [x] x)
@@ -14,6 +15,14 @@
    (fn f [x] [(inc x)])
    (fn g [x] [(- x)])
    42])
+
+(def cq-monad
+  [list
+   (fn bind [mx f] (mapcat f mx))
+
+   #'cq/dot
+   #'cq/all
+   [[42]]])
    
 (def maybe-monad
   [(fn unit [x] {:x x})
@@ -30,8 +39,8 @@
 (def writer-monad
   [(fn unit [x]
      {:x x :log []})
-   (fn [{:keys [x log]} f]
-     (update (f x) :log #(concat log %)))
+   (fn [{:keys [x log] :as mx} mf]
+     (update (mf x) :log #(concat log %)))
 
    (fn f [x] {:x (inc x) :log [(str "Increment: " x)]})
    (fn g [x] {:x (dec x) :log [(str "Decrement: " x)]})
