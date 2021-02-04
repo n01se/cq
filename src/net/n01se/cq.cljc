@@ -170,7 +170,7 @@
     (let [path-elems (invoke-value idx-fn topic)]
       (map #(update-path topic conj %) path-elems))))
 
-(defn cq-reset [path-expr value-expr]
+(defn modify [path-expr value-expr]
   (ffn ffn-reset [topic]
     (list
      (reduce
@@ -243,14 +243,14 @@
 
 ;; .[] all
 ;; .   dot
-;; =  cq-set
-;; |=  cq-reset
+;; =   put
+;; |=  modify
 
 (deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
   #_(comma 6 -2 10 2 -3)
   (pipe [3 -2 5 1 -3]
         all
-        (cq-reset (select ((lift >) dot 0))
+        (modify (select ((lift >) dot 0))
                   ((lift *) dot 2))))
 
 (deft t36  "1,2,3 | select((.*2,.) != 2)"
@@ -289,29 +289,29 @@
 
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (let [f (fn [p] (comma (path p)
-                         (cq-reset p (plus dot 1))))]
+                         (modify p (plus dot 1))))]
     (pipe [[5]]
           (f (pipe (cq-get 0) (cq-get 0))))))
 
 (deft t27 "[[7],[8],[9]] | .[] |= ( .[] |= .+1 )"
   (pipe [[7] [8] [9]]
-        (cq-reset all
-                  (cq-reset all
+        (modify all
+                  (modify all
                             (plus dot 1)))))
 
 (deft t26 "[[7],[8],[9]] | (.[] | .[0]) |= .+1"
   (pipe [[7] [8] [9]]
-        (cq-reset (pipe all (cq-get 0))
+        (modify (pipe all (cq-get 0))
                   (plus dot 1))))
 
 (deft t25 "[[7],[8],[9]] | .[] | .[0] |= .+1"
   (pipe [[7] [8] [9]]
         all
-        (cq-reset (cq-get 0) (plus dot 1))))
+        (modify (cq-get 0) (plus dot 1))))
 
 (deft t24 "[1,2,3] | (.[0,1]) |= .*2"
   (pipe [1 2 3]
-        (cq-reset (cq-get (comma 0 1))
+        (modify (cq-get (comma 0 1))
                   (times dot 2))))
 
 (deft t23 "[4,5,6] | .[0,1]"
@@ -324,7 +324,7 @@
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
   (pipe [0 [[1]]]
-        (cq-reset
+        (modify
          (pipe (cq-get 1) (cq-get 0) (cq-get 0))
          (plus dot 5))))
 
