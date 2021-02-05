@@ -84,14 +84,14 @@
           [()]
           (reverse colls)))
 
-(declare comma)
+(declare span)
 (declare invoke-value)
 
 (defn invoke [mf x]
   (cond
     (number? mf) (list mf)
     (string? mf) (list mf)
-    (vector? mf) (list (vec (invoke-value (apply comma mf) x)))
+    (vector? mf) (list (vec (invoke-value (apply span mf) x)))
     (fn? mf) (mf x)
     (nil? mf) nil ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
@@ -133,8 +133,8 @@
                mfs)))
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
-(defn comma [& mfs] ;; rename: cq-mapcat ?
-  (ffn ffn-comma [x]
+(defn span [& mfs] ;; rename: cq-mapcat ?
+  (ffn ffn-span [x]
        (mapcat #(invoke % x) mfs)))
 
 (def dot
@@ -222,25 +222,25 @@
   #_"def f(p): [p] | path(.[]),(.[] |= .+1); [2,4] | f(.[0,1])"  ;; or this? [0] [1] [3 5]
   (pipe [2 4]
         rooted
-        (cq-get (comma 0 1))
-        (comma rooted-path
-               (rooted-reset (plus dot 1)))))
+        (cq-get (span 0 1))
+        (span rooted-path
+              (rooted-reset (plus dot 1)))))
 
 (deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
-  (pipe (comma [[1]] [[5]])
+  (pipe (span [[1]] [[5]])
         (cq-get 0)
         rooted
         (cq-get 0)
-        (comma
+        (span
          rooted-path
          (rooted-reset (plus dot 1)))))
 
 (deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
-  (pipe (comma [[1]] [[5]])
+  (pipe (span [[1]] [[5]])
         rooted
         (cq-get 0)
         (cq-get 0)
-        (comma
+        (span
          rooted-path
          (rooted-reset (plus dot 1)))))
 
@@ -249,7 +249,7 @@
         rooted
         (cq-get 0)
         (cq-get 0)
-        (comma
+        (span
          rooted-path
          (rooted-reset (plus dot 1)))))
 
@@ -259,22 +259,22 @@
 ;; |=  modify
 
 (deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
-  #_(comma 6 -2 10 2 -3)
+  #_(span 6 -2 10 2 -3)
   (pipe [3 -2 5 1 -3]
         all
         (modify (select ((lift >) dot 0))
-                  ((lift *) dot 2))))
+                ((lift *) dot 2))))
 
 (deft t36  "1,2,3 | select((.*2,.) != 2)"
-  (pipe (comma 1 2 3)
-        (select ((lift not=) (comma (times dot 2) dot) 2))))
+  (pipe (span 1 2 3)
+        (select ((lift not=) (span (times dot 2) dot) 2))))
 
 (deft t35  "1,2,3 | select(. != 2)"
-  (pipe (comma 1 2 3)
+  (pipe (span 1 2 3)
         (select ((lift not=) dot 2))))
 
 (deft t34 "1,2,3,4,3,2,1 | (if . == 2 then empty else . end)"
-  (pipe (comma 1 2 3 4 3 2 1)
+  (pipe (span 1 2 3 4 3 2 1)
         (fn [x] (if (= x 2) () (list x)))))
 
 (deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
@@ -290,18 +290,18 @@
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (pipe [3 4]
         (cq-let [$a [all 9]]
-                (comma all (pipe $a all)))))
+                (span all (pipe $a all)))))
 
 (deft t30  "(1,2,3) as $a | $a + 1"
-  (cq-let [$a (comma 1 2 3)]
+  (cq-let [$a (span 1 2 3)]
           (plus $a 1)))
 
 (deft t29 "5 as $a | $a"
   (cq-let [$a 5] $a))
 
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
-  (let [f (fn [p] (comma (path p)
-                         (modify p (plus dot 1))))]
+  (let [f (fn [p] (span (path p)
+                        (modify p (plus dot 1))))]
     (pipe [[5]]
           (f (pipe (cq-get 0) (cq-get 0))))))
 
@@ -323,11 +323,11 @@
 
 (deft t24 "[1,2,3] | (.[0,1]) |= .*2"
   (pipe [1 2 3]
-        (modify (cq-get (comma 0 1))
-                  (times dot 2))))
+        (modify (cq-get (span 0 1))
+                (times dot 2))))
 
 (deft t23 "[4,5,6] | .[0,1]"
-  (pipe [4 5 6] (cq-get (comma 0 1))))
+  (pipe [4 5 6] (cq-get (span 0 1))))
 
 (deft t22 "path(.[0] | .[1] | .[2])"
   (path (pipe (cq-get 0)
@@ -342,26 +342,26 @@
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
   (pipe 5
-        (minus (comma (times 1 dot) 2)
-               (comma (times 10 dot) 20)
-               (comma (times 100 dot) 200))))
+        (minus (span (times 1 dot) 2)
+               (span (times 10 dot) 20)
+               (span (times 100 dot) 200))))
 
 (deft t19 "(1,2) - (10,20) - (100,200)"
-  (minus (comma 1 2)
-         (comma 10 20)
-         (comma 100 200)))
+  (minus (span 1 2)
+         (span 10 20)
+         (span 100 200)))
 
 (deft t18 "(1,2) + (10,20) + (100,200)"
-  (plus (comma 1 2)
-        (comma 10 20)
-        (comma 100 200)))
+  (plus (span 1 2)
+        (span 10 20)
+        (span 100 200)))
 
 (deft t17 "[1,2,3],[4,5,6],[7,8,9] | .[1,2]"
-  (pipe (comma [1 2 3] [4 5 6] [7 8 9])
-        (cq-get (comma 1 2))))
+  (pipe (span [1 2 3] [4 5 6] [7 8 9])
+        (cq-get (span 1 2))))
 
 (deft t16 "[1,2,3],[4,5,6],[7,8,9] | .[.[]]"
-  (pipe (comma [1 2 3] [4 5 6] [7 8 9])
+  (pipe (span [1 2 3] [4 5 6] [7 8 9])
         (cq-get all)))
 
 (deft t15 "[1,2,3] | path(.[])"
@@ -383,8 +383,8 @@
         (cq-first [dot])))
 
 (deft t11 "1,2,3 | [4,.]"
-  (pipe (comma 1 2 3)
-        (comma [4 dot])))
+  (pipe (span 1 2 3)
+        (span [4 dot])))
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (pipe [1 2 3]
@@ -397,31 +397,31 @@
         (cq-first all)))
 
 (deft t8 "[[1],[2],[3]] | .[] | .[0]"
-  (pipe (comma [[1] [2] [3]])
+  (pipe (span [[1] [2] [3]])
         all
         (cq-get 0)))
 
 (deft t7 "[1,2,3] | .[]"
-  (pipe (comma [1 2 3]) all))
+  (pipe (span [1 2 3]) all))
 
 (deft t6 "1,2,3 | 99,empty,.+1"
-  (pipe (comma 1 2 3)
-        (comma 99 hole (plus dot 1))))
+  (pipe (span 1 2 3)
+        (span 99 hole (plus dot 1))))
 
 (deft t5 "1,2,3 | 99,.+1"
-  (pipe (comma 1 2 3)
-        (comma 99 (plus dot 1))))
+  (pipe (span 1 2 3)
+        (span 99 (plus dot 1))))
 
 (deft t4 "1,2,3 | 99,."
-  (pipe (comma 1 2 3)
-        (comma 99 dot)))
+  (pipe (span 1 2 3)
+        (span 99 dot)))
 
 (deft t3  "1,2,3 | 4,5"
-  (pipe (comma 1 2 3)
-        (comma 4 5)))
+  (pipe (span 1 2 3)
+        (span 4 5)))
 
 (deft t2 "1,empty,3 | . + 1"
-  (pipe (comma 1 hole 3)
+  (pipe (span 1 hole 3)
         (plus dot 1)))
 
 (deft t1 "[1,2,3] | first"
@@ -429,5 +429,5 @@
         (cq-get 0)))
 
 (deft t0 "1,2,3 | . + 1"
-  (pipe (comma 1 2 3)
+  (pipe (span 1 2 3)
         (plus dot 1)))
