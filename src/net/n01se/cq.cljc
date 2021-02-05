@@ -125,10 +125,6 @@
 ;; There is a list monad at the base of our operations:
 ;; ...where "unit" is list and "bind" is mapcat except the arguments are reversed
 
-;; The list monad is additive, so it also supplies an mzero and mplus
-;; It's mplus would be apply concat
-(defn hole [x] ()) ;; mzero for monadic vals
-
 (defn pipe [& mfs] ;; variatic monoid-plus over monadic fns
   (ffn ffn-pipe [x]
        (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
@@ -139,6 +135,11 @@
 (defn span [& mfs] ;; rename: cq-mapcat ?
   (ffn ffn-span [x]
        (mapcat #(invoke % x) mfs)))
+
+;; The list monad is additive, so it also supplies an mzero and mplus
+;; It's mplus would be apply concat
+(def hole
+  (ffn ffn-hole [x] ())) ;; mzero for monadic vals
 
 (def dot
   (ffn ffn-dot [x]
