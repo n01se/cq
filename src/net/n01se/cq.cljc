@@ -87,17 +87,17 @@
 (declare comma)
 (declare invoke-value)
 
-(defn invoke [f topic]
+(defn invoke [mf x]
   (cond
-    (number? f) (list f)
-    (string? f) (list f)
-    (vector? f) (list (vec (invoke-value (apply comma f) topic)))
-    (fn? f) (f topic)
-    (nil? f) nil ;; Complain? jq doesn't
-    :else (throw (ex-info (str "Can't invoke " (pr-str f)) {}))))
+    (number? mf) (list mf)
+    (string? mf) (list mf)
+    (vector? mf) (list (vec (invoke-value (apply comma mf) x)))
+    (fn? mf) (mf x)
+    (nil? mf) nil ;; Complain? jq doesn't
+    :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
-(defn invoke-value [f topic]
-  (map get-value (invoke f topic)))
+(defn invoke-value [mf x]
+  (map get-value (invoke mf x)))
 
 (def tracing false)
 (def ^:dynamic *ffn-depth* 1)
@@ -138,85 +138,84 @@
        (mapcat #(invoke % x) mfs)))
 
 (def dot
-  (ffn ffn-dot [topic]
-       (list (as-value-path topic))))
+  (ffn ffn-dot [x]
+       (list (as-value-path x))))
 
 (def all
-  (ffn ffn-all [topic]
-       (let [coll (get-value topic)]
+  (ffn ffn-all [x]
+       (let [coll (get-value x)]
          (assert (coll? coll)
                  (str "`all` requires a seqable collection, not "
                       (type coll) ": " (pr-str coll)))
-         (map-indexed (fn [i y] (update-path topic conj i)) coll))))
+         (map-indexed (fn [i y] (update-path x conj i)) coll))))
 
-(defn path [f]
-  (ffn ffn-path [topic]
-    (map get-path (invoke f (reroot-path topic)))))
+(defn path [mf]
+  (ffn ffn-path [x]
+    (map get-path (invoke mf (reroot-path x)))))
 
-(defn cq-first [f]
-  (ffn ffn-first [topic]
-    (take 1 (invoke-value f topic))))
+(defn cq-first [mf]
+  (ffn ffn-first [x]
+    (take 1 (invoke-value mf x))))
 
-(defmacro cq-let [[sym sym-expr] expr]
-  `(ffn ~'ffn-cq-let [topic#]
-     (let [value# (invoke ~sym-expr topic#)
+(defmacro cq-let [[sym sym-mf] mf]
+  `(ffn ~'ffn-cq-let [x#]
+     (let [value# (invoke ~sym-mf x#)
            ~sym (constantly value#)
-           result# (invoke ~expr topic#)]
+           result# (invoke ~mf x#)]
        result#)))
 
-(defmacro cq-letfn [fnforms expr]
-  `(ffn ~'ffn-cq-letfn [topic#]
-        (letfn ~fnforms (invoke ~expr topic#))))
+(defmacro cq-letfn [fnforms mf]
+  `(ffn ~'ffn-cq-letfn [x#]
+        (letfn ~fnforms (invoke ~mf x#))))
 
 (defn lift [f]
-  (fn lifted [& fs]
-    (ffn ffn-lift [topic]
+  (fn lifted [& mf]
+    (ffn ffn-lift [x]
       (map #(apply f %)
-           (cartesian-product (map #(invoke-value % topic) fs))))))
+           (cartesian-product (map #(invoke-value % x) mf))))))
 
 (def times (lift *))
 (def plus (lift +))
 (def minus (lift -))
 
-(defn cq-get [idx-fn]
-  (ffn ffn-get [topic]
-    (let [path-elems (invoke-value idx-fn topic)]
-      (map #(update-path topic conj %) path-elems))))
+(defn cq-get [mf]
+  (ffn ffn-get [x]
+    (let [path-elems (invoke-value mf x)]
+      (map #(update-path x conj %) path-elems))))
 
-(defn modify [path-expr value-expr]
-  (ffn ffn-reset [topic]
+(defn modify [path-mf value-mf]
+  (ffn ffn-reset [x]
     (list
      (reduce
       (fn [acc value-path]
         ;; some versions before jq-1.6 use `last` instead of `first`:
-        (let [deep-value (get-value (first (invoke value-expr value-path)))
+        (let [deep-value (get-value (first (invoke value-mf value-path)))
               path (get-path value-path)]
           (if (empty? path)
             deep-value ;; c'mon, Clojure!
             (assoc-in acc path deep-value))))
-      (get-value topic)
-      (invoke path-expr (reroot-path topic))))))
+      (get-value x)
+      (invoke path-mf (reroot-path x))))))
 
-(defn select [f]
-  (ffn ffn-select [topic]
-       (mapcat #(when % (list topic))
-               (invoke-value f topic))))
-
+(defn select [mf]
+  (ffn ffn-select [x]
+       (mapcat #(when % (list x))
+               (invoke-value mf x))))
 
 ;; EXPERIMENTAL dynamically rooted paths
 (def rooted
-  (ffn ffn-rooted [topic]
-       (list (reroot-path topic))))
+  (ffn ffn-rooted [x]
+       (list (reroot-path x))))
 
 (def rooted-path
-  (ffn ffn-rooted-path [topic]
-       (list (get-path topic))))
+  (ffn ffn-rooted-path [x]
+       (list (get-path x))))
 
-(defn rooted-reset [value-expr]
-  (ffn ffn-rooted-reset [topic]
+(defn rooted-reset [mf]
+  (ffn ffn-rooted-reset [x]
     (list
-     (let [deep-value (get-value (first (invoke value-expr topic)))]
-       (assoc-in (get-root topic) (get-path topic) deep-value)))))
+     (let [deep-value (get-value (first (invoke mf x)))]
+       (assoc-in (get-root x) (get-path x) deep-value)))))
 
 (deft tx3
   "[0],[3,4],[1],[2,5]" ;; is this right?
