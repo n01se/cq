@@ -99,6 +99,9 @@
 (defn invoke-value [mf x]
   (map get-value (invoke mf x)))
 
+(defn cq [mf & [x]]
+  (invoke-value mf x))
+
 (def tracing false)
 (def ^:dynamic *ffn-depth* 1)
 (defn trace [& args] (apply println (apply str (repeat *ffn-depth* " ")) args))
@@ -184,7 +187,7 @@
       (map #(update-path x conj %) path-elems))))
 
 (defn modify [path-mf value-mf]
-  (ffn ffn-reset [x]
+  (ffn ffn-modify [x]
     (list
      (reduce
       (fn [acc value-path]
