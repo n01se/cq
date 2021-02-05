@@ -93,14 +93,18 @@
     (string? mf) (list mf)
     (vector? mf) (list (vec (invoke-value (apply span mf) x)))
     (fn? mf) (mf x)
+    (var? mf) (mf x)
     (nil? mf) nil ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
 (defn invoke-value [mf x]
   (map get-value (invoke mf x)))
 
-(defn cq [mf & [x]]
-  (invoke-value mf x))
+(defn cq [mf]
+  (invoke-value mf nil))
+
+(defn cq1 [mf]
+  (first (invoke-value mf nil)))
 
 (def tracing false)
 (def ^:dynamic *ffn-depth* 1)
@@ -145,6 +149,8 @@
   (ffn ffn-dot [x]
        (list (as-value-path x))))
 
+(def . dot)
+
 (def all
   (ffn ffn-all [x]
        (let [coll (get-value x)]
@@ -172,15 +178,17 @@
   `(ffn ~'ffn-cq-letfn [x#]
         (letfn ~fnforms (invoke ~mf x#))))
 
+(defmacro cq-letlift [fn-vec mf]
+  `(ffn ~'ffn-cq-letlift [x#]
+        (let [~@(mapcat (fn [fn-sym] [fn-sym `(lift ~fn-sym)])
+                        fn-vec)]
+          (invoke ~mf x#))))
+
 (defn lift [f]
   (fn lifted [& mf]
     (ffn ffn-lift [x]
       (map #(apply f %)
            (cartesian-product (map #(invoke-value % x) mf))))))
-
-(def times (lift *))
-(def plus (lift +))
-(def minus (lift -))
 
 (defn cq-get [mf]
   (ffn ffn-get [x]
@@ -228,7 +236,7 @@
         rooted
         (cq-get (span 0 1))
         (span rooted-path
-              (rooted-reset (plus dot 1)))))
+              (rooted-reset ((lift +) dot 1)))))
 
 (deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
   (pipe (span [[1]] [[5]])
@@ -237,7 +245,7 @@
         (cq-get 0)
         (span
          rooted-path
-         (rooted-reset (plus dot 1)))))
+         (rooted-reset ((lift +) dot 1)))))
 
 (deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
   (pipe (span [[1]] [[5]])
@@ -246,7 +254,7 @@
         (cq-get 0)
         (span
          rooted-path
-         (rooted-reset (plus dot 1)))))
+         (rooted-reset ((lift +) dot 1)))))
 
 (deft tx0 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (pipe [[5]]
@@ -255,7 +263,7 @@
         (cq-get 0)
         (span
          rooted-path
-         (rooted-reset (plus dot 1)))))
+         (rooted-reset ((lift +) dot 1)))))
 
 ;; .[] all
 ;; .   dot
@@ -270,8 +278,9 @@
                 ((lift *) dot 2))))
 
 (deft t36  "1,2,3 | select((.*2,.) != 2)"
-  (pipe (span 1 2 3)
-        (select ((lift not=) (span (times dot 2) dot) 2))))
+  (cq-letlift [*]
+    (pipe (span 1 2 3)
+          (select ((lift not=) (span (* dot 2) dot) 2)))))
 
 (deft t35  "1,2,3 | select(. != 2)"
   (pipe (span 1 2 3)
@@ -289,7 +298,8 @@
 
 (deft t32 "def foo(f): f|f; 5|foo(.*2)"
   (let [foo (fn [f] (pipe f f))]
-    (pipe 5 (foo (times dot 2)))))
+    (cq-letlift [*]
+      (pipe 5 (foo (* dot 2))))))
 
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (pipe [3 4]
@@ -298,14 +308,14 @@
 
 (deft t30  "(1,2,3) as $a | $a + 1"
   (cq-let [$a (span 1 2 3)]
-          (plus $a 1)))
+          ((lift +) $a 1)))
 
 (deft t29 "5 as $a | $a"
   (cq-let [$a 5] $a))
 
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (let [f (fn [p] (span (path p)
-                        (modify p (plus dot 1))))]
+                        (modify p ((lift +) dot 1))))]
     (pipe [[5]]
           (f (pipe (cq-get 0) (cq-get 0))))))
 
@@ -313,22 +323,23 @@
   (pipe [[7] [8] [9]]
         (modify all
                   (modify all
-                            (plus dot 1)))))
+                            ((lift +) dot 1)))))
 
 (deft t26 "[[7],[8],[9]] | (.[] | .[0]) |= .+1"
   (pipe [[7] [8] [9]]
         (modify (pipe all (cq-get 0))
-                  (plus dot 1))))
+                  ((lift +) dot 1))))
 
 (deft t25 "[[7],[8],[9]] | .[] | .[0] |= .+1"
   (pipe [[7] [8] [9]]
         all
-        (modify (cq-get 0) (plus dot 1))))
+        (modify (cq-get 0) ((lift +) dot 1))))
 
 (deft t24 "[1,2,3] | (.[0,1]) |= .*2"
-  (pipe [1 2 3]
-        (modify (cq-get (span 0 1))
-                (times dot 2))))
+  (cq-letlift [*]
+    (pipe [1 2 3]
+          (modify (cq-get (span 0 1))
+                  (* dot 2)))))
 
 (deft t23 "[4,5,6] | .[0,1]"
   (pipe [4 5 6] (cq-get (span 0 1))))
@@ -342,21 +353,23 @@
   (pipe [0 [[1]]]
         (modify
          (pipe (cq-get 1) (cq-get 0) (cq-get 0))
-         (plus dot 5))))
+         ((lift +) dot 5))))
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
-  (pipe 5
-        (minus (span (times 1 dot) 2)
-               (span (times 10 dot) 20)
-               (span (times 100 dot) 200))))
+  (cq-letlift [* -]
+    (pipe 5
+          (- (span (* 1 .) 2)
+             (span (* 10 .) 20)
+             (span (* 100 .) 200)))))
 
 (deft t19 "(1,2) - (10,20) - (100,200)"
-  (minus (span 1 2)
-         (span 10 20)
-         (span 100 200)))
+  (cq-letlift [-]
+    (- (span 1 2)
+       (span 10 20)
+       (span 100 200))))
 
 (deft t18 "(1,2) + (10,20) + (100,200)"
-  (plus (span 1 2)
+  ((lift +) (span 1 2)
         (span 10 20)
         (span 100 200)))
 
@@ -394,7 +407,7 @@
   (pipe [1 2 3]
         (cq-first (pipe
                    all
-                   (plus dot 1)))))
+                   ((lift inc) dot)))))
 
 (deft t9 "[1,2,3] | first(.[])"
   (pipe [1 2 3]
@@ -410,11 +423,11 @@
 
 (deft t6 "1,2,3 | 99,empty,.+1"
   (pipe (span 1 2 3)
-        (span 99 hole (plus dot 1))))
+        (span 99 hole ((lift +) dot 1))))
 
 (deft t5 "1,2,3 | 99,.+1"
   (pipe (span 1 2 3)
-        (span 99 (plus dot 1))))
+        (span 99 ((lift +) dot 1))))
 
 (deft t4 "1,2,3 | 99,."
   (pipe (span 1 2 3)
@@ -426,7 +439,7 @@
 
 (deft t2 "1,empty,3 | . + 1"
   (pipe (span 1 hole 3)
-        (plus dot 1)))
+        ((lift +) dot 1)))
 
 (deft t1 "[1,2,3] | first"
   (pipe [1 2 3]
@@ -434,4 +447,4 @@
 
 (deft t0 "1,2,3 | . + 1"
   (pipe (span 1 2 3)
-        (plus dot 1)))
+        ((lift +) dot 1)))

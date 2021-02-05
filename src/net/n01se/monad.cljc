@@ -20,9 +20,9 @@
   [list
    (fn bind [mx f] (mapcat f mx))
 
-   #'cq/dot
-   #'cq/all
-   [[42]]])
+   (#'cq/comma #'cq/dot #'cq/dot)
+   (#'cq/pipe #'cq/all (#'cq/cq-first #'cq/dot))
+   [42]])
    
 (def maybe-monad
   [(fn unit [x] {:x x})
