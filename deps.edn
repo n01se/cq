@@ -1,4 +1,3 @@
-{:paths ["src"]
- :deps {cheshire/cheshire {:mvn/version "5.10.0"}}
+{:paths ["test" "src"]
+ :deps {cheshire/cheshire {:mvn/version "5.10.0"}}}
  ;;:aliases {:server {:main-opts ["-m" "viasat.sdp.api.auth-proxy"]}}
-}
