@@ -5,7 +5,7 @@
              :refer [. | & all hole path lift modify
                      rooted rooted-path rooted-reset
                      select cq-get cq-letlift cq-letfn
-                     cq-let cq-first
+                     cq-let
                      concat inc + - * / = not= < > <= >=]]
             [clojure.java.shell :refer [sh]]
             [cheshire.core :as json]
@@ -165,10 +165,10 @@
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
   (| [0 [[1]]]
-    (modify (| (cq-get 1)
-               (cq-get 0)
-               (cq-get 0))
-            (+ . 5))))
+     (modify (| (cq-get 1)
+                (cq-get 0)
+                (cq-get 0))
+             (+ . 5))))
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
   (| 5
@@ -187,11 +187,15 @@
      (& 100 200)))
 
 (deft t17 "[1,2,3],[4,5,6],[7,8,9] | .[1,2]"
-  (| (& [1 2 3] [4 5 6] [7 8 9])
+  (| (& [1 2 3]
+        [4 5 6]
+        [7 8 9])
      (cq-get (& 1 2))))
 
 (deft t16 "[1,2,3],[4,5,6],[7,8,9] | .[.[]]"
-  (| (& [1 2 3] [4 5 6] [7 8 9])
+  (| (& [1 2 3]
+        [4 5 6]
+        [7 8 9])
      (cq-get all)))
 
 (deft t15 "[1,2,3] | path(.[])"
@@ -206,7 +210,7 @@
 
 (deft t12 "1 | first([.])"
   (| 1
-     (cq-first [.])))
+     (cq/first [.])))
 
 (deft t11 "1,2,3 | [4,.]"
   (| (& 1 2 3)
@@ -214,12 +218,12 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (| [1 2 3]
-     (cq-first (| all
+     (cq/first (| all
                   (inc .)))))
 
 (deft t9 "[1,2,3] | first(.[])"
   (| [1 2 3]
-     (cq-first all)))
+     (cq/first all)))
 
 (deft t8 "[[1],[2],[3]] | .[] | .[0]"
   (| (& [[1] [2] [3]])
