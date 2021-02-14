@@ -1,5 +1,5 @@
 (ns net.n01se.cq
-  (:refer-clojure :exclude [concat inc first + - * / = not= < > <= >=])
+  (:refer-clojure :exclude [concat inc + - * / = not= < > <= >=])
   (:require [clojure.core :as clj])
   (:require [clojure.walk :refer [postwalk]])
   (:require [net.n01se.cq.core :refer
@@ -39,6 +39,10 @@
 (defn path [mf]
   (ffn ffn-path [x]
     (map get-path (invoke mf (reroot-path x)))))
+
+(defn cq-first [mf]
+  (ffn ffn-first [x]
+    (take 1 (invoke-value mf x))))
 
 (defmacro cq-let [[sym sym-mf] mf]
   `(ffn ~'ffn-cq-let [x#]
@@ -82,7 +86,7 @@
        ~@(postwalk
           (fn [form]
             (if-let [[sym v]
-                     (and (seq? form) (find macro-map (clj/first form)))]
+                     (and (seq? form) (find macro-map (first form)))]
               (list* (var-name v) (rest form))
               form))
           body))))
@@ -98,7 +102,7 @@
      (reduce
       (fn [acc value-path]
         ;; some versions before jq-1.6 use `last` instead of `first`:
-        (let [deep-value (get-value (clj/first (invoke value-mf value-path)))
+        (let [deep-value (get-value (first (invoke value-mf value-path)))
               path (get-path value-path)]
           (if (empty? path)
             deep-value ;; c'mon, Clojure!
@@ -123,7 +127,7 @@
 (defn rooted-reset [mf]
   (ffn ffn-rooted-reset [x]
     (list
-     (let [deep-value (get-value (clj/first (invoke mf x)))]
+     (let [deep-value (get-value (first (invoke mf x)))]
        (assoc-in (get-root x) (get-path x) deep-value)))))
 
 (defn cartesian-product
@@ -146,13 +150,12 @@
   (invoke-value mf nil))
 
 (defn cq1 [mf]
-  (clj/first (invoke-value mf nil)))
+  (first (invoke-value mf nil)))
 
 ;; lifted functions
 
 (def concat (lift clj/concat))
 (def inc (lift clj/inc))
-(def first (lift clj/first)) ;; we choose not to support zero-arg jq first
 (def + (lift clj/+))
 (def - (lift clj/-))
 (def * (lift clj/*))
