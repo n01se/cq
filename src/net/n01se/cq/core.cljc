@@ -21,6 +21,10 @@
   (get-path [x] path)
   (update-path* [x f args] (ValuePath. root-value (apply f path args))))
 
+(defmethod print-method ValuePath [o w]
+  (.write w (str "#cq/ValuePath" {:root (.root-value o)
+                                  :path (.path o)})))
+
 (def DefaultIValuePath
   {:get-value identity
    :get-root #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
@@ -39,56 +43,81 @@
 (defn reroot-path [x]
   (as-value-path (get-value x)))
 
-(declare span)
+(declare &)
 (declare invoke-value)
 
 (defn invoke [mf x]
   (cond
     (number? mf) (list mf)
     (string? mf) (list mf)
-    (vector? mf) (list (vec (invoke-value (apply span mf) x)))
+    (boolean? mf) (list mf)
+    (vector? mf) (list (vec (invoke-value (apply & mf) x)))
     (fn? mf) (mf x)
     (var? mf) (mf x)
-    (nil? mf) nil ;; Complain? jq doesn't
+    (nil? mf) (list nil) ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
 (defn invoke-value [mf x]
   (map get-value (invoke mf x)))
 
-(def tracing false)
-(def ^:dynamic *ffn-depth* 1)
-(defn trace [& args] (apply println (apply str (repeat *ffn-depth* " ")) args))
+(declare emit)
 
-(defmacro ffn
-  "Exactly like (fn name [args] ...), but asserts the return value is
-  sequential."
-  [name-sym argv & body]
-  (assert (symbol? name-sym))
-  (assert (vector? argv))
-  (assert (= 1 (count argv)))
-  `(fn ~name-sym ~argv
-     (when tracing (trace "Piping" ~(first argv) "into" '~name-sym))
-     (let [result# (binding [*ffn-depth* (inc *ffn-depth*)] (do ~@body))]
-       (when tracing (trace "Return" result# "from" '~name-sym))
-       (assert (sequential? result#)
-               (str ~(str "Non-list returned by " name-sym " for args: ")
-                    (pr-str ~(first argv))))
-       result#)))
+(defn emit-meta [{:keys [mfc-expr mf-expr]}]
+  (if-let [[f & args] mfc-expr]
+    (cons f (map emit args))
+    mf-expr))
+
+(defn emit [mf]
+  (or (emit-meta (meta mf)) mf))
+
+(def ^:dynamic *tracing* false)
+(def ^:dynamic *mfn-depth* 1)
+(defn trace [& args]
+  (when *tracing*
+    (apply println (apply str (repeat *mfn-depth* " ")) args)))
+
+(def heavy-runtime true) ;; not sure how to parameterize this
+(if heavy-runtime
+  (defmacro mfn
+    "Exactly like (fn name [args] ...), but asserts the return value is
+  sequential. Returns a list-monadic function."
+    [name-sym attr-map argv & body]
+    (assert (symbol? name-sym))
+    (assert (vector? argv))
+    (assert (= 1 (count argv)))
+    (assert (map? attr-map))
+    `(let [emitted# (emit-meta ~attr-map)]
+       (with-meta
+         (fn ~name-sym ~argv
+           (trace "Pipe" ~(first argv) "into" emitted#)
+           (let [result# (binding [*mfn-depth* (inc *mfn-depth*)] (do ~@body))]
+             (trace "Return" result# "from" emitted#)
+             (assert (sequential? result#)
+                     (str "Non-list returned by "
+                          emitted#
+                          " for args: "
+                          (pr-str ~(first argv))))
+             result#))
+         ~attr-map)))
+  (defmacro mfn [name-sym attr-map argv & body]
+    (list* 'fn argv body)))
+
+(defmacro def-mfc
+  "Define a named list-monadic-function constructor. When called, the ctor
+  function retuns a monadic function that closes over the ctors args and has
+  metadata naming the ctor and the ctor args, for use in tracing and debugging."
+  [sym arg-syms [this-sym :as this-args] & body]
+  (assert (symbol? sym))
+  (assert (vector? arg-syms))
+  (assert (vector? this-args))
+  `(defn ~sym [& args#]
+     (let [~arg-syms args#]
+       (mfn ~(symbol (str "mfn-" sym)) {:mfc-expr (cons '~sym args#)} [~this-sym]
+            ~@body))))
 
 ;; There is a list monad at the base of our operations:
 ;; ...where "unit" is list and "bind" is mapcat except the arguments are reversed
 
-(defn pipe [& mfs] ;; variatic monoid-plus over monadic fns
-  (ffn ffn-pipe [x]
-       (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
-               (list x)
-               mfs)))
-
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
-(defn span [& mfs] ;; rename: cq-mapcat ?
-  (ffn ffn-span [x]
-       (mapcat #(invoke % x) mfs)))
-
-(def dot
-  (ffn ffn-dot [x]
-       (list (as-value-path x))))
+(def-mfc & [& mfs] [x] ;; a.k.a. comma or span
+  (mapcat #(invoke % x) mfs))
