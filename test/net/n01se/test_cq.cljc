@@ -7,6 +7,7 @@
                      select cq-get cq-letlift cq-letfn
                      cq-let cq-first
                      concat inc + - * / = not= < > <= >=]]
+            [clojure.core :as clj]
             [clojure.java.shell :refer [sh]]
             [cheshire.core :as json]
             [clojure.string :as str]
@@ -28,9 +29,9 @@
   (if-not (string? jqs)
     true
     (let [jq-out (jq jqs)]
-      (when-not (= cq jq-out)
+      (when-not (clj/= cq jq-out)
         (prn :expected jq-out :got cq))
-      (= cq jq-out))))
+      (clj/= cq jq-out))))
 
 (defmacro deft [n jq expr]
   `(def ~(vary-meta n assoc
@@ -84,6 +85,10 @@
 ;; =   put
 ;; |=  modify
 
+(deft t38 "5 | [., 10 + .]"
+  (cq-letlift [list]
+    (| 5 (list ., (+ 10 .)))))
+
 (deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
   #_(& 6 -2 10 2 -3)
   (| [3 -2 5 1 -3]
@@ -92,9 +97,8 @@
              (* . 2))))
 
 (deft t36  "1,2,3 | select((.*2,.) != 2)"
-  (cq-letlift [*]
-    (| (& 1 2 3)
-       (select (not= (& (* . 2) .) 2)))))
+  (| (& 1 2 3)
+     (select (not= (& (* . 2) .) 2))))
 
 (deft t35  "1,2,3 | select(. != 2)"
   (| (& 1 2 3)
@@ -102,7 +106,7 @@
 
 (deft t34 "1,2,3,4,3,2,1 | (if . == 2 then empty else . end)"
   (| (& 1 2 3 4 3 2 1)
-     (fn [x] (if (= x 2) () (list x)))))
+     (fn [x] (if (clj/= x 2) () (list x)))))
 
 (deft t33 "def addvalue(f): f as $x | .[] | [. + $x]; [[1,2],[10,20]] | addvalue(.[0])"
   (cq-letfn [(addvalue [f] (cq-let [$x f]
@@ -112,8 +116,7 @@
 
 (deft t32 "def foo(f): f|f; 5|foo(.*2)"
   (let [foo (fn [f] (| f f))]
-    (cq-letlift [*]
-      (| 5 (foo (* . 2))))))
+    (| 5 (foo (* . 2)))))
 
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (| [3 4]
