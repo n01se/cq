@@ -115,8 +115,8 @@
        (mfn ~(symbol (str "mfn-" sym)) {:mfc-expr (cons '~sym args#)} [~this-sym]
             ~@body))))
 
-;; There is a list monad at the base of our operations:
-;; ...where "unit" is list and "bind" is mapcat except the arguments are reversed
+;; There is a list monad at the base of our operations: ...where "unit" is list
+;; (aka `.`) and "bind" is mapcat except the arguments are reversed
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
 (def-mfc & [& mfs] [x] ;; a.k.a. comma or span

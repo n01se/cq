@@ -27,7 +27,7 @@
 
 (def .
   (mfn mfn-dot {:mf-expr '.} [x]
-       (list (as-value-path x))))
+       (list x)))
 
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; It's mplus would be apply concat
