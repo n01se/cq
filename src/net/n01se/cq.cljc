@@ -17,8 +17,8 @@
               invoke-value]]))
 
 ;; public API
-(def emit core/emit)
-(def & core/&)
+(def emit #'core/emit)
+(def & #'core/&)
 
 (def-mfc | [& mfs] [x] ;; pipe: variatic monoid-plus over monadic fns
   (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
