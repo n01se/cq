@@ -17,8 +17,8 @@
               invoke-value]]))
 
 ;; public API
-(def emit core/emit)
-(def & core/&)
+(def emit #'core/emit)
+(def & #'core/&)
 
 (def-mfc | [& mfs] [x] ;; pipe: variatic monoid-plus over monadic fns
   (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
@@ -47,6 +47,9 @@
 
 (def-mfc cq-first [mf] [x]
   (take 1 (invoke-value mf x)))
+
+(def-mfc cq-if [b t e] [x]
+  (mapcat #(invoke (if % t e) x) (invoke-value b x)))
 
 (defmacro cq-let [[sym sym-mf] mf]
   `(mfn ~'mfn-cq-let {:mfc-expr '~(list 'cq-let [sym sym-mf] mf)} [x#]
@@ -192,3 +195,8 @@
 ;; think that makes sense. They do not short-circuit:
 (def-lift cq-and (fn [a b] (and a b)))
 (def-lift cq-or  (fn [a b] (or  a b)))
+
+
+(def-lift jq-+ #(if (every? number? %&)
+                  (apply clj/+ %&)
+                  (apply clj/concat %&)))

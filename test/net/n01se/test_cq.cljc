@@ -8,6 +8,7 @@
                      cq-let cq-first
                      concat inc + - * / = not= < > <= >=]]
             [clojure.core :as clj]
+            [net.n01se.cq.jq-compiler :as jqc]
             [clojure.java.shell :refer [sh]]
             [cheshire.core :as json]
             [clojure.string :as str]
@@ -35,14 +36,22 @@
 
 (defmacro deft [n jq expr]
   `(def ~(vary-meta n assoc
+                    :jq jq
                     :test `(fn []
                              (let [cq# (cq/cq ~expr)]
-                               (assert (check-jq cq# ~jq) (str))
+                               (assert (check-jq cq# ~jq))
                                cq#)))
      (fn [] ((:test (meta (var ~n)))))))
 
 (defn test-here []
   (dorun (map #(%) (keep (comp :test meta val) (ns-publics *ns*))))
+  :ok)
+
+(defn test-compiler []
+  (doseq [[_ v] (ns-publics *ns*)]
+    (when-let [jq (-> v meta :jq)]
+      (let [form (-> jq jqc/parse jqc/jq-compile)]
+        (assert (check-jq (cq/cq (eval form)) jq)))))
   :ok)
 
 ;; EXPERIMENTAL dynamically rooted paths
@@ -87,7 +96,7 @@
 
 (deft t38 "5 | [., 10 + .]"
   (cq-letlift [list]
-    (| 5 (list ., (+ 10 .)))))
+    (| 5 (list . (+ 10 .)))))
 
 (deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
   #_(& 6 -2 10 2 -3)

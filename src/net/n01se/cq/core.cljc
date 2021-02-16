@@ -68,7 +68,9 @@
     mf-expr))
 
 (defn emit [mf]
-  (or (emit-meta (meta mf)) mf))
+  (cond
+    (vector? mf) (mapv emit mf)
+    :else (or (emit-meta (meta mf)) mf)))
 
 (def ^:dynamic *tracing* false)
 (def ^:dynamic *mfn-depth* 1)
