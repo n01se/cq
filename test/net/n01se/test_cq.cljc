@@ -39,7 +39,7 @@
                     :jq jq
                     :test `(fn []
                              (let [cq# (cq/cq ~expr)]
-                               (assert (check-jq cq# ~jq) (str))
+                               (assert (check-jq cq# ~jq))
                                cq#)))
      (fn [] ((:test (meta (var ~n)))))))
 
@@ -48,7 +48,9 @@
   (doseq [[_ v] (ns-publics *ns*)]
     (when-let [jq (-> v meta :jq)]
       (prn jq)
-      (prn (-> jq jqc/parse jqc/jq-compile cq/emit)))))
+      (let [form (-> jq jqc/parse jqc/jq-compile)]
+        (prn form)
+        (assert (check-jq (cq/cq (eval form)) jq))))))
 
 ;; EXPERIMENTAL dynamically rooted paths
 
