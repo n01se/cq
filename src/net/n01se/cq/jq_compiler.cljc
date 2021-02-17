@@ -7,26 +7,33 @@
             (slurp (io/resource "net/n01se/cq/jq.grammar"))
             :auto-whitespace :standard))
 
+(def op-symbols
+  {","  `cq/&
+   "+"  `cq/jq-+
+   "-"  `cq/-
+   "*"  `cq/*
+   "/"  `cq//
+   "==" `cq/=
+   "!=" `cq/not=
+   ">"  `cq/>
+   "<"  `cq/<
+   ">=" `cq/>=
+   "<=" `cq/<=
+   "|=" `cq/modify})
+
 (declare jq-compile)
 
-(defn compile-infix-list [args]
-  ;; TODO this is not right when a single list contains different ops of the
-  ;; same precedence:
-  (cons
-   (case (first (filter string? args))
-     "," `cq/&
-     "+" `cq/jq-+
-     "-" `cq/-
-     "*" `cq/*
-     "/" `cq//
-     "==" `cq/=
-     "!=" `cq/not=
-     ">" `cq/>
-     "<" `cq/<
-     ">=" `cq/>=
-     "<=" `cq/<=)
-   (map jq-compile (take-nth 2 args))))
-
+(defn compile-infix-list
+  "Compile a list of same-precedent infix ops and operands into grouped cq forms."
+  [args]
+  (->> (rest args)
+       (partition 2)
+       (partition-by first)
+       (reduce (fn [left-form run]
+                 (list* (get op-symbols (ffirst run))
+                        left-form
+                        (map (comp jq-compile second) run)))
+               (jq-compile (first args)))))
 
 (defn jq-compile [[node & args :as arg]]
   (case node
@@ -56,13 +63,22 @@
               expr
               `(cq/cq-letfn [~@defs]
                             ~expr)))
-    :as (prn :as (cons node args))
-    (if (and (= 1 (count args)) (vector? (first args)))
-      (jq-compile (first args))
-      (if-let [s (first (filter string? args))]
-        (case s
-          "|" (let [parts (take-nth 2 (partition-by #{"|"} args))
-                    runs (partition-by second parts)]
+    (let [first-str (first (filter string? args))]
+      (cond
+        ;; auto-recurse non-terminal rules
+        (and (= 1 (count args)) (vector? (first args)))
+        (jq-compile (first args))
+
+        ;; in-fix operators
+        (get op-symbols first-str)
+        (compile-infix-list args)
+
+        :else
+        (case first-str
+          "." `cq/.
+          "$" (symbol (str "$" (-> args second second)))
+          "|" (let [parts (take-nth 2 (partition-by (partial = "|") args))
+                    runs (reverse (partition-by second (drop-last parts)))]
                 (reduce (fn [form run]
                           (if (-> run first second)
                             ;; "as"-run
@@ -76,24 +92,14 @@
                             ;; non-"as"-run
                             `(cq/| ~@(map (comp jq-compile first) run)
                                    ~form)))
-                        `cq/.
-                        (reverse runs)))
-
-          ("," "+" "-" "*" "/" "==" "!=" "<" ">" "<=" ">=")
-          (compile-infix-list args)
-
-          "$" (symbol (str "$" (-> args second second)))
+                        (jq-compile (first (last parts)))
+                        runs))
           "[" (let [[a b] (map jq-compile (remove string? args))]
                 (cond
                   (= "[" (first args)) [a]          ;; build vector
                   (not b) `(cq/| ~a cq/all)         ;; all .[]
                   :else `(cq/| ~a (cq/cq-get ~b)))) ;; navigate
-          "|=" (let [[a _ b] args]
-                 `(cq/modify ~(jq-compile a) ~(jq-compile b)))
-          "." `cq/.
           "if" `(cq/cq-if ~@(map jq-compile (rest args)))
-          (throw (ex-info "unknown-exp-str" {:str s})))
-        (throw (ex-info (str "unknown-node") {:expr (cons node args)}))))))
-
-#_(jq-compile (parse "1,2,3 | ."))
+          (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
+                          {:entry (cons node args)})))))))
 
