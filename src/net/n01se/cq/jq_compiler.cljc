@@ -7,6 +7,8 @@
             (slurp (io/resource "net/n01se/cq/jq.grammar"))
             :auto-whitespace :standard))
 
+(declare jq-compile)
+
 (defn compile-infix-list [args]
   ;; TODO this is not right when a single list contains different ops of the
   ;; same precedence:
