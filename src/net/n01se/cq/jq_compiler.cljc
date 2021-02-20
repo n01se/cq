@@ -92,7 +92,9 @@
 
         :else
         (case first-str
-          "." `cq/.
+          "." (if-let [lookup (second args)]
+                `(cq/cq-get ~(second lookup))
+                `cq/.)
           "$" (symbol (str "$" (-> args second second)))
           "|" (let [parts (take-nth 2 (partition-by (partial = "|") args))
                     runs (reverse (partition-by second (drop-last parts)))]
@@ -117,10 +119,13 @@
                   (= "[" (first args)) [a]           ;; build vector
                   (= 1 (count vs)) `(cq/| ~a cq/all) ;; all .[]
                   :else `(cq/| ~a (cq/cq-get ~b))))  ;; navigate
-          "{" (into {} (map (fn [[k v]]
-                              [(str (jq-compile k))
-                               (jq-compile v)])
-                            (partition 2 (rest args))))
+          "{" (into {} (map (fn [[_ [knode :as k] v]]
+                              (let [kc (jq-compile k)
+                                    kc (if (symbol? kc) (str kc) kc)]
+                                (if v
+                                  [kc (jq-compile v)]
+                                  [kc `(cq/cq-get ~kc)])))
+                            (rest args)))
           "if" `(cq/cq-if ~@(map jq-compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))

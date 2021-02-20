@@ -66,8 +66,10 @@
     (number? mf) (list mf)
     (string? mf) (list mf)
     (boolean? mf) (list mf)
+    (keyword? mf) (list mf)
     (vector? mf) (list (vec (invoke-value (apply & mf) x)))
-    (map? mf) (->> (map #(invoke % x) (apply concat mf))
+    (map? mf) (->> (apply concat mf)
+                   (map #(invoke-value % x))
                    cartesian-product
                    (map #(apply array-map %)))
     (fn? mf) (mf x)

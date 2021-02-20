@@ -23,7 +23,7 @@ exp50 = exp60 (<ws>? ("!="|"=="|"<"|">"|"<="|">=") exp60)*
 exp60 = exp70 (<ws>? ("+"|"-") exp70)*
 exp70 = exp90 (<ws>? "*" exp90)*
 exp90 =
-     <ws>? "{" (( exp00 <":"> exp00 ) ( <","> exp00 <":"> exp00 )*)? <"}"> |
+     <ws>? "{" (obj-entry (<ws>? <","> obj-entry)* )? <ws>? <"}"> |
      exp90? <ws>? "[" exp00? <ws>? "]" |
      exp90? <ws>? "." ident |
      <ws>? "." |
@@ -34,6 +34,8 @@ exp90 =
      <ws>? <"("> exp00 <ws>? <")"> |
      <ws>? format |
      <ws>? format-interp
+
+obj-entry = exp90 (<":"> exp00)?
 
 format-interp = format <ws>? str
 
