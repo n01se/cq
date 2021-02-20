@@ -4,8 +4,7 @@
             [net.n01se.cq :as cq]))
 
 (def parse (insta/parser
-            (slurp (io/resource "net/n01se/cq/jq.grammar"))
-            :auto-whitespace :standard))
+            (slurp (io/resource "net/n01se/cq/jq.grammar"))))
 
 (def op-symbols
   {","  `cq/&
@@ -37,17 +36,34 @@
 
 (defn jq-compile [[node & args :as arg]]
   (case node
-    :statements (some jq-compile args)
+    :statements (jq-compile (last args))
     :number (read-string (first args))
+
+    :str    `(cq/cq-str ~@(map jq-compile args))
+    :istr   (read-string (str \" (first args) \"))
+    :format `(cq/jq-format ~(keyword (first args)))
+    :format-interp (let [[format-node [_ & parts]] args]
+                     `(cq/cq-str ~@(map (fn [[snode :as expr]]
+                                          (if (= :istr snode)
+                                            (jq-compile expr)
+                                            `(cq/| ~(jq-compile expr)
+                                                   ~(jq-compile format-node))))
+                                        parts)))
+
     :invoke (let [ident (-> args first second)
                   args (map jq-compile (next args))]
               (case ident
+                "true" true
+                "false" false
+                "null" nil
                 "empty" `cq/hole
                 "first" (if (empty? args)
                           `(cq/cq-get 0)
                           `(cq/cq-first ~@args))
                 "path" `(cq/path ~@args)
                 "select" `(cq/select ~@args)
+                "tojson" `cq/tojson
+                "fromjson" `cq/fromjson
                 ;; Maybe, hopefully, a local?
                 (if (empty? args)
                   (symbol ident)
@@ -63,6 +79,7 @@
               expr
               `(cq/cq-letfn [~@defs]
                             ~expr)))
+
     (let [first-str (first (filter string? args))]
       (cond
         ;; auto-recurse non-terminal rules
@@ -94,11 +111,16 @@
                                    ~form)))
                         (jq-compile (first (last parts)))
                         runs))
-          "[" (let [[a b] (map jq-compile (remove string? args))]
+          "[" (let [[a b :as vs] (map jq-compile (remove string? args))]
                 (cond
-                  (= "[" (first args)) [a]          ;; build vector
-                  (not b) `(cq/| ~a cq/all)         ;; all .[]
-                  :else `(cq/| ~a (cq/cq-get ~b)))) ;; navigate
+                  (empty? vs) []                     ;; build empty vector
+                  (= "[" (first args)) [a]           ;; build vector
+                  (= 1 (count vs)) `(cq/| ~a cq/all) ;; all .[]
+                  :else `(cq/| ~a (cq/cq-get ~b))))  ;; navigate
+          "{" (into {} (map (fn [[k v]]
+                              [(str (jq-compile k))
+                               (jq-compile v)])
+                            (partition 2 (rest args))))
           "if" `(cq/cq-if ~@(map jq-compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))

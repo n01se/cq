@@ -8,6 +8,7 @@
                      cq-let cq-first
                      concat inc + - * / = not= < > <= >=]]
             [clojure.core :as clj]
+            [clojure.java.io :as io]
             [net.n01se.cq.jq-compiler :as jqc]
             [clojure.java.shell :refer [sh]]
             [cheshire.core :as json]
@@ -15,21 +16,26 @@
             #?(:clj [clojure.test :as t]
                :cljs [cljs.test :as t :include-macros true])))
 
-(defonce jq-cache (memoize (fn [jqs] (sh "jq" "-nc" jqs))))
+(def jq-cache
+  (memoize
+   (fn [jqs input]
+     (if input
+       (sh "jq" "-c" jqs :in input)
+       (sh "jq" "-nc" jqs)))))
 
 (defn parse-jq-out [string]
   (map json/parse-string (str/split string #"\n")))
 
-(defn jq [string]
-  (let [{:keys [out err exit]} (jq-cache string)]
+(defn jq [string & [input]]
+  (let [{:keys [out err exit]} (jq-cache string input)]
     (when (not (zero? exit))
       (throw (Exception. err)))
     (parse-jq-out out)))
 
-(defn check-jq [cq jqs]
+(defn check-jq [cq jqs & [input]]
   (if-not (string? jqs)
     true
-    (let [jq-out (jq jqs)]
+    (let [jq-out (jq jqs input)]
       (when-not (clj/= cq jq-out)
         (prn :expected jq-out :got cq))
       (clj/= cq jq-out))))
@@ -50,9 +56,23 @@
 (defn test-compiler []
   (doseq [[_ v] (ns-publics *ns*)]
     (when-let [jq (-> v meta :jq)]
-      (let [form (-> jq jqc/parse jqc/jq-compile)]
-        (assert (check-jq (cq/cq (eval form)) jq)))))
+      (let [form (try (-> jq jqc/parse jqc/jq-compile)
+                      (catch Exception ex
+                        (println "parse/compile failed: " jq)
+                        (throw ex)))]
+        (when-not (check-jq (cq/cq (eval form)) jq)
+          (println "check failed: " jq)))))
   :ok)
+
+(defn jq-unit-tests []
+  (let [tests (slurp (io/resource "net/n01se/cq/jq.test"))]
+    (doseq [[_ jq input & outs]
+            (re-seq #"\n(?:#.*\n|\n)+(.+)\n\ufeff?(.+)\n(.+)(?:\n(.+))*" tests)]
+      (prn jq)
+      (let [form (-> jq jqc/parse jqc/jq-compile)]
+        (assert (check-jq (cq/cq (eval form)
+                                 (json/parse-string input))
+                          jq input))))))
 
 ;; EXPERIMENTAL dynamically rooted paths
 
@@ -93,6 +113,18 @@
 ;; .   .
 ;; =   put
 ;; |=  modify
+
+(deft t42 "42 | {a:(.,.+1)}"
+  (| 42 {"a" (& . (+ . 1))}))
+
+(deft t41 "\"b\" | @base64 \"a\\(.)c\""
+  (| "b" (cq/cq-str "a" (cq/jq-format :base64) "c")))
+
+(deft t40 "[1,2],[\"h\",\"i\"],[[3,4],[5,6]] | .[0]+.[1]"
+  (| (& [1 2]
+        ["h" "i"]
+        [[3 4] [5 6]])
+     (cq/jq-+ (cq-get 0) (cq-get 1))))
 
 (deft t39 "1 + 2 + 4 + 8 * 16 * 32 - 64 - 128"
   (- (+ 1 2 4 (* 8 16 32)) 64 128))

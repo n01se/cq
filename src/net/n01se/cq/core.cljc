@@ -16,7 +16,11 @@
                      (= (.path a) (.path b))))
 
   IValuePath
-  (get-value [x] (get-in root-value path))
+  (get-value [x] (reduce (fn [v i]
+                           (if (seq? v)
+                             (nth v i)
+                             (get v i)))
+                         root-value path))
   (get-root [x] root-value)
   (get-path [x] path)
   (update-path* [x f args] (ValuePath. root-value (apply f path args))))
@@ -43,6 +47,17 @@
 (defn reroot-path [x]
   (as-value-path (get-value x)))
 
+
+(defn cartesian-product
+  "All the ways to take one item from each sequence"
+  [colls]
+  (reduce (fn [products coll]
+            (for [product products
+                  value coll]
+              (conj product value)))
+          [()]
+          (reverse colls)))
+
 (declare &)
 (declare invoke-value)
 
@@ -52,6 +67,9 @@
     (string? mf) (list mf)
     (boolean? mf) (list mf)
     (vector? mf) (list (vec (invoke-value (apply & mf) x)))
+    (map? mf) (->> (map #(invoke % x) (apply concat mf))
+                   cartesian-product
+                   (map #(apply array-map %)))
     (fn? mf) (mf x)
     (var? mf) (mf x)
     (nil? mf) (list nil) ;; Complain? jq doesn't
@@ -121,5 +139,10 @@
 ;; (aka `.`) and "bind" is mapcat except the arguments are reversed
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
-(def-mfc & [& mfs] [x] ;; a.k.a. comma or span
-  (mapcat #(invoke % x) mfs))
+(defn & ;; a.k.a. comma or span
+  ([] (mfn mfn-span0 {:mf-expr '(&)} [x] ())) ;; a.k.a. hole
+  ([mf1] mf1)
+  ([mf1 & mfs]
+   (mfn mfn-spann {:mfc-expr `(& ~mf1 ~@mfs)} [x]
+        (mapcat #(invoke % x) (cons mf1 mfs)))))
+

@@ -1,8 +1,10 @@
 (ns net.n01se.cq
   (:refer-clojure :exclude [concat inc + - * / = not= < > <= >=])
-  (:require [clojure.core :as clj])
-  (:require [clojure.walk :refer [postwalk]])
-  (:require [net.n01se.cq.core :as core :refer
+  (:require [clojure.core :as clj]
+            [clojure.walk :refer [postwalk]]
+            [cheshire.core :as json]
+            [clojure.string :as str]
+            [net.n01se.cq.core :as core :refer
              [mfn
               def-mfc
 
@@ -12,6 +14,7 @@
               as-value-path
               update-path
               reroot-path
+              cartesian-product
 
               invoke
               invoke-value]]))
@@ -20,10 +23,14 @@
 (def emit #'core/emit)
 (def & #'core/&)
 
-(def-mfc | [& mfs] [x] ;; pipe: variatic monoid-plus over monadic fns
-  (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
-          (list x)
-          mfs))
+(defn | ;; pipe: variatic monoid-plus over monadic fns
+  ([] list) ;; a.k.a. unit
+  ([mf1] mf1)
+  ([mf1 & mfs]
+   (mfn mfn-pipen {:mfc-expr `(| ~mf1 ~@mfs)} [x]
+        (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
+                (list x)
+                (cons mf1 mfs)))))
 
 (def .
   (mfn mfn-dot {:mf-expr '.} [x]
@@ -140,16 +147,6 @@
    (let [deep-value (get-value (clj/first (invoke mf x)))]
      (assoc-in (get-root x) (get-path x) deep-value))))
 
-(defn cartesian-product ;; TODO move to impl
-  "All the ways to take one item from each sequence"
-  [colls]
-  (reduce (fn [products coll]
-            (for [product products
-                  value coll]
-              (conj product value)))
-          [()]
-          (reverse colls)))
-
 (defn lift [f & [{:keys [sym]}]]
   (fn lifted [& mf]
     (mfn mfn-lift {:mfc-expr (cons sym mf)} [x]
@@ -167,8 +164,8 @@
          @*bs))
      (invoke-value mfa x))))
 
-(defn cq [mf]
-  (invoke-value mf nil))
+(defn cq [mf & [input]]
+  (invoke-value mf input))
 
 (defn cq1 [mf]
   (first (invoke-value mf nil)))
@@ -197,6 +194,49 @@
 (def-lift cq-or  (fn [a b] (or  a b)))
 
 
-(def-lift jq-+ #(if (every? number? %&)
-                  (apply clj/+ %&)
-                  (apply clj/concat %&)))
+(def-lift jq-+ #(cond
+                  (every? number? %&) (apply clj/+ %&)
+                  (every? string? %&) (apply str %&)
+                  :else (apply clj/concat %&)))
+
+(def-lift cq-str #(apply str %&))
+
+(defn csv-str [x]
+  (if (string? x)
+    (str \" (str/replace x "\"" "\"\"") \")
+    (str x)))
+(defn tsv-str [x]
+  (if (string? x)
+    (str/replace x "\t" "\\t")
+    (str x)))
+
+(def-mfc jq-format [ftype] [x]
+  (list
+   (case ftype
+     :text x
+     :json (json/generate-string x)
+     :csv (str/join "," (map csv-str x))
+     :tsv (str/join "\t" (map tsv-str x))
+     :html (apply str (map #(case %
+                              \' "&apos;"
+                              \" "&quot;"
+                              \& "&amp;"
+                              \< "&lt;"
+                              \> "&gt;"
+                              %) x))
+     :uri (str/replace x #"[^\w']" (fn [s]
+                                     (->> (.getBytes s)
+                                          (map #(format "%%%02X" %))
+                                          (apply str))))
+     :sh (str \' (str/replace x #"'" "'\\\\''") \')
+     :base64 (String. (.encode (java.util.Base64/getEncoder) (.getBytes x)) "UTF-8")
+     :base64d (String. (.decode (java.util.Base64/getDecoder) x))
+     x)))
+
+(def tojson
+  (mfn mfn-tojson {:mf-expr 'tojson} [x]
+       (list (json/generate-string (get-value x)))))
+
+(def fromjson
+  (mfn mfn-fromjson {:mf-expr 'fromjson} [x]
+       (list (json/parse-string (get-value x)))))
