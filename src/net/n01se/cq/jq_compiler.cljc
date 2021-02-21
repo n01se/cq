@@ -39,11 +39,11 @@
     :statements (jq-compile (last args))
     :number (read-string (first args))
 
-    :str    `(cq/cq-str ~@(map jq-compile args))
+    :str    `(cq/str ~@(map jq-compile args))
     :istr   (read-string (str \" (first args) \"))
     :format `(cq/jq-format ~(keyword (first args)))
     :format-interp (let [[format-node [_ & parts]] args]
-                     `(cq/cq-str ~@(map (fn [[snode :as expr]]
+                     `(cq/str ~@(map (fn [[snode :as expr]]
                                           (if (= :istr snode)
                                             (jq-compile expr)
                                             `(cq/| ~(jq-compile expr)
@@ -56,10 +56,10 @@
                 "true" true
                 "false" false
                 "null" nil
-                "empty" `cq/hole
+                "empty" `(cq/&)
                 "first" (if (empty? args)
-                          `(cq/cq-get 0)
-                          `(cq/cq-first ~@args))
+                          `(cq/get 0)
+                          `(cq/first ~@args))
                 "path" `(cq/path ~@args)
                 "select" `(cq/select ~@args)
                 "tojson" `cq/tojson
@@ -77,7 +77,7 @@
                 expr (jq-compile (last args))]
             (if (empty? defs)
               expr
-              `(cq/cq-letfn [~@defs]
+              `(cq/letfn [~@defs]
                             ~expr)))
 
     (let [first-str (first (filter string? args))]
@@ -93,7 +93,7 @@
         :else
         (case first-str
           "." (if-let [lookup (second args)]
-                `(cq/cq-get ~(second lookup))
+                `(cq/get ~(second lookup))
                 `cq/.)
           "$" (symbol (str "$" (-> args second second)))
           "|" (let [parts (take-nth 2 (partition-by (partial = "|") args))
@@ -101,7 +101,7 @@
                 (reduce (fn [form run]
                           (if (-> run first second)
                             ;; "as"-run
-                            `(cq/cq-let [~@(mapcat
+                            `(cq/let [~@(mapcat
                                             (fn [[expr as]]
                                               [(symbol (str "$" (get-in as [2 1])))
                                                (jq-compile expr)])
@@ -118,15 +118,15 @@
                   (empty? vs) []                     ;; build empty vector
                   (= "[" (first args)) [a]           ;; build vector
                   (= 1 (count vs)) `(cq/| ~a cq/all) ;; all .[]
-                  :else `(cq/| ~a (cq/cq-get ~b))))  ;; navigate
+                  :else `(cq/| ~a (cq/get ~b))))  ;; navigate
           "{" (into {} (map (fn [[_ [knode :as k] v]]
                               (let [kc (jq-compile k)
                                     kc (if (symbol? kc) (str kc) kc)]
                                 (if v
                                   [kc (jq-compile v)]
-                                  [kc `(cq/cq-get ~kc)])))
+                                  [kc `(cq/get ~kc)])))
                             (rest args)))
-          "if" `(cq/cq-if ~@(map jq-compile (rest args)))
+          "if" `(cq/if ~@(map jq-compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))
 
