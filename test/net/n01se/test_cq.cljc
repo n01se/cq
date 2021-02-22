@@ -59,8 +59,8 @@
             (re-seq #"\n(?:#.*\n|\n)+(.+)\n\ufeff?(.+)\n(.+)(?:\n(.+))*" tests)]
       (prn jq)
       (let [form (-> jq jqc/parse jqc/jq-compile)]
-        (assert (check-jq (cq/eval (eval form)
-                                 (json/parse-string input))
+        (assert (check-jq (cq/eval (json/parse-string input)
+                                   (eval form))
                           jq input))))))
 
 ;; EXPERIMENTAL dynamically rooted paths

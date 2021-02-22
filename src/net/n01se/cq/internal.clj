@@ -167,7 +167,7 @@
 (defcq eval1
   (defn cq-eval1 ;; TODO: throw if more than one in return list?
     ([mf] (first (invoke-value mf nil)))
-    ([mf input] (first (invoke-value mf input)))))
+    ([input mf] (first (invoke-value mf input)))))
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
 (defcq &
