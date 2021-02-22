@@ -162,7 +162,7 @@
 (defcq eval
   (defn cq-eval
     ([mf] (invoke-value mf nil))
-    ([mf input] (invoke-value mf input))))
+    ([input mf] (invoke-value mf input))))
 
 (defcq eval1
   (defn cq-eval1 ;; TODO: throw if more than one in return list?
