@@ -1,10 +1,8 @@
 (ns net.n01se.cq.internal
-  (:require
-   [clojure.core :as clj]
-   [clojure.string :as str]
-   [clojure.walk :refer [postwalk]]
-   [cheshire.core :as json]
-            ))
+  (:require [cheshire.core :as json]
+            [clojure.core :as clj]
+            [clojure.string :as str]
+            [clojure.walk :refer [postwalk]]))
 
 ;; ValuePath
 ;; This is a bit like a writer monad with root as the value and path as the log?
@@ -23,9 +21,13 @@
 
   IValuePath
   (get-value [x] (reduce (fn [v i]
-                           (if (seq? v)
-                             (nth v i)
-                             (get v i)))
+                           (cond
+                             (nil? v) nil
+                             (seq? v) (nth v i)
+                             (vector? v) (get v i)
+                             (associative? v) (v i)
+                             :else (throw (Exception.
+                                           (str "Illegal lookup on " (type v))))))
                          root-value path))
   (get-root [x] root-value)
   (get-path [x] path)
@@ -196,13 +198,17 @@
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; Its mplus would be apply concat
 
+(defmacro ex-assert [expr & [msg]]
+  `(when-not ~expr
+     (throw (ex-info ~(or msg (pr-str expr)) {:expr '~expr}))))
+
 (defcq all
   (def all
     (mfn mfn-all {:mf-expr 'all} [x]
          (let [coll (get-value x)]
-           (assert (coll? coll)
-                   (str "`all` requires a seqable collection, not "
-                        (type coll) ": " (pr-str coll)))
+           (ex-assert (coll? coll)
+                      (str "`all` requires a seqable collection, not "
+                           (type coll) ": " (pr-str coll)))
            (map-indexed (fn [i y] (update-path x conj i)) coll)))))
 
 (def-mfc path [mf] [x]
@@ -402,3 +408,16 @@
   (def fromjson
     (mfn mfn-fromjson {:mf-expr 'fromjson} [x]
          (list (json/parse-string (get-value x))))))
+
+(def-mfc try [expr] [x]
+  (try (doall (invoke-value expr x))
+       (catch Exception ex ())))
+
+(defcq jq-tree-seq
+  (def jq-tree-seq
+    (mfn mfn-jq-tree-seq {:mf-expr 'jq-tree-seq} [x]
+         (tree-seq coll?
+                   #(if (map? %) (vals %) (seq %))
+                   x))))
+
+

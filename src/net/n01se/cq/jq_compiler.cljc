@@ -38,6 +38,9 @@
   (case node
     :statements (jq-compile (last args))
     :number (read-string (first args))
+    :vector (if-let [v (first args)]
+              [(jq-compile v)]
+              [])
 
     :str    `(cq/str ~@(map jq-compile args))
     :istr   (read-string (str \" (first args) \"))
@@ -92,10 +95,20 @@
 
         :else
         (case first-str
-          "." (if-let [lookup (second args)]
-                `(cq/get ~(second lookup))
-                `cq/.)
+          "." (let [[left _ [ltype :as lnode]] (if (= "." (first args))
+                                           (cons nil args)
+                                           args)
+                    right (if lnode
+                            `(cq/get ~(if (= :ident ltype)
+                                        (second lnode)
+                                        (jq-compile lnode)))
+                            `cq/.)]
+                (if left
+                  `(cq/| ~(jq-compile left) ~right)
+                  right))
           "$" (symbol (str "$" (-> args second second)))
+          "?" `(cq/try ~(jq-compile (first args)))
+          ".." `cq/jq-tree-seq
           "|" (let [parts (take-nth 2 (partition-by (partial = "|") args))
                     runs (reverse (partition-by second (drop-last parts)))]
                 (reduce (fn [form run]
@@ -113,12 +126,11 @@
                                    ~form)))
                         (jq-compile (first (last parts)))
                         runs))
-          "[" (let [[a b :as vs] (map jq-compile (remove string? args))]
-                (cond
-                  (empty? vs) []                     ;; build empty vector
-                  (= "[" (first args)) [a]           ;; build vector
-                  (= 1 (count vs)) `(cq/| ~a cq/all) ;; all .[]
-                  :else `(cq/| ~a (cq/get ~b))))  ;; navigate
+          "[" (let [[a b c :as vs] (map jq-compile (remove string? args))]
+                (case (count vs)
+                  1 `(cq/| ~a cq/all) ;; all .[]
+                  2 `(cq/| ~a (cq/get ~b))  ;; navigate
+                  3 `(cq/slice ~b ~c))) ;; slice
           "{" (into {} (map (fn [[_ [knode :as k] v]]
                               (let [kc (jq-compile k)
                                     kc (if (symbol? kc) (str kc) kc)]
@@ -129,4 +141,9 @@
           "if" `(cq/if ~@(map jq-compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))
+
+;; Possible simplifications:
+;; - flatten nested variatic fns (| a (| b c)) -> (| a b c)
+;; - remove unnecessary dots (| . all) -> (| all)
+;; - remove one-arg &'s and |'s (| a) -> a
 

@@ -58,10 +58,11 @@
     (doseq [[_ jq input & outs]
             (re-seq #"\n(?:#.*\n|\n)+(.+)\n\ufeff?(.+)\n(.+)(?:\n(.+))*" tests)]
       (prn jq)
-      (let [form (-> jq jqc/parse jqc/jq-compile)]
-        (assert (check-jq (cq/eval (json/parse-string input)
-                                   (eval form))
-                          jq input))))))
+      (when-not (= "%%FAIL" jq)
+        (let [form (-> jq jqc/parse jqc/jq-compile)]
+          (assert (check-jq (cq/eval (json/parse-string input)
+                                     (eval form))
+                            jq input)))))))
 
 ;; EXPERIMENTAL dynamically rooted paths
 
