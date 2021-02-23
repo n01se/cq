@@ -4,6 +4,9 @@
             [clojure.string :as str]
             [clojure.walk :refer [postwalk]]))
 
+(binding [*ns* *ns*] (in-ns 'net.n01se.cq))
+(alias 'cq 'net.n01se.cq)
+
 ;; ValuePath
 ;; This is a bit like a writer monad with root as the value and path as the log?
 (defprotocol IValuePath
@@ -135,18 +138,6 @@
   (defmacro mfn [name-sym attr-map argv & body]
     (list* 'fn argv body)))
 
-(binding [*ns* *ns*] (in-ns 'net.n01se.cq))
-
-(defmacro defcq
-  "Wrap this around a def form (eg. def or defmacro) to make the var available
-  in the public `cq` namespace."
-  [to-sym body-var]
-  `(let [v# ~body-var]
-     (ns-unmap 'net.n01se.cq '~to-sym)
-     (intern 'net.n01se.cq
-             (with-meta '~to-sym (meta v#))
-             @v#)))
-
 (defmacro def-mfc
   "Define a named list-monadic-function constructor. When called, the ctor
   function retuns a monadic function that closes over the ctors args and has
@@ -155,45 +146,41 @@
   (assert (symbol? sym))
   (assert (vector? arg-syms))
   (assert (vector? this-args))
-  `(defcq ~sym
-     (defn ~(symbol (str "cq-" sym)) [& args#]
-       (let [~arg-syms args#]
-         (mfn ~(symbol (str "mfn-" sym)) {:mfc-expr (cons '~sym args#)} [~this-sym]
-              ~@body)))))
+  `(defn ~(with-meta (symbol (str "cq-" sym))
+            {:publish (str sym)})
+     [& args#]
+     (let [~arg-syms args#]
+       (mfn ~(symbol (str "mfn-" sym)) {:mfc-expr (cons '~sym args#)} [~this-sym]
+            ~@body))))
 
-(defcq eval
-  (defn cq-eval
-    ([mf] (invoke-value mf nil))
-    ([input mf] (invoke-value mf input))))
+(defn ^{:publish 'eval} cq-eval
+  ([mf] (invoke-value mf nil))
+  ([input mf] (invoke-value mf input)))
 
-(defcq eval1
-  (defn cq-eval1 ;; TODO: throw if more than one in return list?
-    ([mf] (first (invoke-value mf nil)))
-    ([input mf] (first (invoke-value mf input)))))
+(defn ^{:publish 'eval1} cq-eval1 ;; TODO: throw if more than one in return list?
+  ([mf] (first (invoke-value mf nil)))
+  ([input mf] (first (invoke-value mf input))))
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
-(defcq &
-  (defn & ;; a.k.a. comma or span
-    ([] (mfn mfn-span0 {:mf-expr '(&)} [x] ())) ;; a.k.a. empty
-    ([mf1] mf1)
-    ([mf1 & mfs]
-     (mfn mfn-spann {:mfc-expr `(& ~mf1 ~@mfs)} [x]
-          (mapcat #(invoke % x) (cons mf1 mfs))))))
+(defn ^:publish & ;; a.k.a. comma or span
+  ([] (mfn mfn-span0 {:mf-expr '(&)} [x] ())) ;; a.k.a. empty
+  ([mf1] mf1)
+  ([mf1 & mfs]
+   (mfn mfn-spann {:mfc-expr `(& ~mf1 ~@mfs)} [x]
+        (mapcat #(invoke % x) (cons mf1 mfs)))))
 
-(defcq |
-  (defn cq-| ;; pipe: variatic monoid-plus over monadic fns
-    ([] list) ;; a.k.a. unit
-    ([mf1] mf1)
-    ([mf1 & mfs]
-     (mfn mfn-pipen {:mfc-expr `(| ~mf1 ~@mfs)} [x]
-          (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
-                  (list x)
-                  (cons mf1 mfs))))))
+(defn ^:publish | ;; pipe: variatic monoid-plus over monadic fns
+  ([] list) ;; a.k.a. unit
+  ([mf1] mf1)
+  ([mf1 & mfs]
+   (mfn mfn-pipen {:mfc-expr `(| ~mf1 ~@mfs)} [x]
+        (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
+                (list x)
+                (cons mf1 mfs)))))
 
-(defcq .
-  (def .
-    (mfn mfn-dot {:mf-expr '.} [x]
-         (list x))))
+(def ^:publish .
+  (mfn mfn-dot {:mf-expr '.} [x]
+       (list x)))
 
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; Its mplus would be apply concat
@@ -202,14 +189,13 @@
   `(when-not ~expr
      (throw (ex-info ~(or msg (pr-str expr)) {:expr '~expr}))))
 
-(defcq all
-  (def all
-    (mfn mfn-all {:mf-expr 'all} [x]
-         (let [coll (get-value x)]
-           (ex-assert (coll? coll)
-                      (str "`all` requires a seqable collection, not "
-                           (type coll) ": " (pr-str coll)))
-           (map-indexed (fn [i y] (update-path x conj i)) coll)))))
+(def ^:publish all
+  (mfn mfn-all {:mf-expr 'all} [x]
+       (let [coll (get-value x)]
+         (ex-assert (coll? coll)
+                    (str "`all` requires a seqable collection, not "
+                         (type coll) ": " (pr-str coll)))
+         (map-indexed (fn [i y] (update-path x conj i)) coll))))
 
 (def-mfc path [mf] [x]
   (map get-path (invoke mf (reroot-path x))))
@@ -220,64 +206,62 @@
 (def-mfc if [b t e] [x]
   (mapcat #(invoke (if % t e) x) (invoke-value b x)))
 
-(defcq let
-  (defmacro cq-let [[sym sym-mf] mf]
-    `(mfn ~'mfn-cq-let {:mfc-expr '~(list 'cq-let [sym sym-mf] mf)} [x#]
-          (let [value# (invoke ~sym-mf x#)
-                ~sym (constantly value#)
-                result# (invoke ~mf x#)]
-            result#))))
+(defmacro ^{:publish 'let} cq-let
+  [[sym sym-mf] mf]
+  `(mfn ~'mfn-cq-let {:mfc-expr '~(list 'cq-let [sym sym-mf] mf)} [x#]
+        (let [value# (invoke ~sym-mf x#)
+              ~sym (constantly value#)
+              result# (invoke ~mf x#)]
+          result#)))
 
-(defcq letfn
-  (defmacro cq-letfn [fnforms mf]
-    `(mfn ~'mfn-cq-letfn {:mfc-expr '~(list 'cq-letfn fnforms mf)} [x#]
-          (letfn ~fnforms (invoke ~mf x#)))))
+(defmacro ^{:publish 'letfn} cq-letfn
+  [fnforms mf]
+  `(mfn ~'mfn-cq-letfn {:mfc-expr '~(list 'cq-letfn fnforms mf)} [x#]
+        (letfn ~fnforms (invoke ~mf x#))))
 
-(defcq letlift
-  (defmacro cq-letlift [fn-vec mf]
-    `(mfn ~'mfn-cq-letlift {:mfc-expr '~(list 'cq-letlift fn-vec mf)} [x#]
-          (let [~@(mapcat (fn [fn-sym]
-                            [fn-sym `(lift ~fn-sym
-                                           {:sym '~(symbol "lifted"
-                                                           (name fn-sym))})])
-                          fn-vec)]
-            (invoke ~mf x#)))))
+(defmacro ^{:publish 'letlift} cq-letlift
+  [fn-vec mf]
+  `(mfn ~'mfn-cq-letlift {:mfc-expr '~(list 'cq-letlift fn-vec mf)} [x#]
+        (let [~@(mapcat (fn [fn-sym]
+                          [fn-sym `(lift ~fn-sym
+                                         {:sym '~(symbol "lifted"
+                                                         (name fn-sym))})])
+                        fn-vec)]
+          (invoke ~mf x#))))
 
 
 (defn var-name [the-var]
   (symbol (second (re-matches #"#'(.*)" (str the-var)))))
 
-(defcq with-refer-all
-  (defmacro with-refer-all
-    "Take a vector of namespaces (or ns aliases) and make all their publics
+(defmacro ^:publish with-refer-all
+  "Take a vector of namespaces (or ns aliases) and make all their publics
   available without qualification to the body param."
-    [ns-name-vector & body]
-    ;; Non-macro vars are provided in an outer `let`, allowing normal shadowing in
-    ;; the body. Since macros cannot be bound via `let`, the body is walked
-    ;; looking for macro invocations, and the macro name is replaced with the
-    ;; fully-qualified form.
-    (let [aliases (ns-aliases *ns*)
-          ns-list (map #(or (get aliases %) (the-ns %)) ns-name-vector)
-          var-map (apply merge-with (fn [a b] a) (map ns-publics ns-list))
-          {macros true, others nil} (group-by #(:macro (meta (val %))) var-map)
-          macro-map (into {} macros)
-          others-map (dissoc (into {} others) '. '&)]
-      `(let [~@(->> (tree-seq coll? seq body)
-                    (mapcat (fn [form]
-                              (when-let [[sym v] (find others-map form)]
-                                [sym (var-name v)]))))]
-         ~@(postwalk
-            (fn [form]
-              (if-let [[sym v]
-                       (and (seq? form) (find macro-map (first form)))]
-                (list* (var-name v) (rest form))
-                form))
-            body)))))
+  [ns-name-vector & body]
+  ;; Non-macro vars are provided in an outer `let`, allowing normal shadowing in
+  ;; the body. Since macros cannot be bound via `let`, the body is walked
+  ;; looking for macro invocations, and the macro name is replaced with the
+  ;; fully-qualified form.
+  (let [aliases (ns-aliases *ns*)
+        ns-list (map #(or (get aliases %) (the-ns %)) ns-name-vector)
+        var-map (apply merge-with (fn [a b] a) (map ns-publics ns-list))
+        {macros true, others nil} (group-by #(:macro (meta (val %))) var-map)
+        macro-map (into {} macros)
+        others-map (dissoc (into {} others) '. '&)]
+    `(let [~@(->> (tree-seq coll? seq body)
+                  (mapcat (fn [form]
+                            (when-let [[sym v] (find others-map form)]
+                              [sym (var-name v)]))))]
+       ~@(postwalk
+          (fn [form]
+            (if-let [[sym v]
+                     (and (seq? form) (find macro-map (first form)))]
+              (list* (var-name v) (rest form))
+              form))
+          body))))
 
-(defcq with-tracing
-  (defmacro with-tracing [& body]
-    `(binding [internal/*tracing* 1]
-       ~@body)))
+(defmacro ^:publish with-tracing [& body]
+  `(binding [internal/*tracing* 1]
+     ~@body))
 
 (def-mfc get [mf] [x]
   (let [path-elems (invoke-value mf x)]
@@ -301,27 +285,24 @@
           (invoke-value mf x)))
 
 ;; EXPERIMENTAL dynamically rooted paths
-(defcq rooted
-  (def rooted
-    (mfn mfn-rooted {:mf-expr 'rooted} [x]
-         (list (reroot-path x)))))
+(def ^:publish rooted
+  (mfn mfn-rooted {:mf-expr 'rooted} [x]
+       (list (reroot-path x))))
 
-(defcq rooted-path
-  (def rooted-path
-    (mfn mfn-rooted-path {:mf-expr 'rooted-path} [x]
-         (list (get-path x)))))
+(def ^:publish rooted-path
+  (mfn mfn-rooted-path {:mf-expr 'rooted-path} [x]
+       (list (get-path x))))
 
 (def-mfc rooted-reset [mf] [x]
   (list
    (let [deep-value (get-value (first (invoke mf x)))]
      (assoc-in (get-root x) (get-path x) deep-value))))
 
-(defcq lift
-  (defn lift [f & [{:keys [sym]}]]
-    (fn lifted [& mf]
-      (mfn mfn-lift {:mfc-expr (cons sym mf)} [x]
-           (map #(apply f %)
-                (cartesian-product (map #(invoke-value % x) mf)))))))
+(defn ^:publish lift [f & [{:keys [sym]}]]
+  (fn lifted [& mf]
+    (mfn mfn-lift {:mfc-expr (cons sym mf)} [x]
+         (map #(apply f %)
+              (cartesian-product (map #(invoke-value % x) mf))))))
 
 ;; Fully-short-circuiting `and` -- perhaps put in jq-compatibility namespace?
 #_
@@ -337,9 +318,9 @@
 ;; lifted functions
 
 (defmacro def-lift [sym clj-fn & [local-alias]]
-  `(defcq ~sym
-     (def ~(or local-alias (symbol (str "cq-" sym)))
-       (lift ~clj-fn {:sym '~sym}))))
+  `(def ~(with-meta (or local-alias (symbol (str "cq-" sym)))
+           {:publish (str sym)})
+     (lift ~clj-fn {:sym '~sym})))
 
 (def-lift concat clj/concat)
 (def-lift inc clj/inc)
@@ -399,25 +380,22 @@
      :base64d (String. (.decode (java.util.Base64/getDecoder) x))
      x)))
 
-(defcq tojson
-  (def tojson
-    (mfn mfn-tojson {:mf-expr 'tojson} [x]
-         (list (json/generate-string (get-value x))))))
+(def ^:publish tojson
+  (mfn mfn-tojson {:mf-expr 'tojson} [x]
+       (list (json/generate-string (get-value x)))))
 
-(defcq fromjson
-  (def fromjson
-    (mfn mfn-fromjson {:mf-expr 'fromjson} [x]
-         (list (json/parse-string (get-value x))))))
+(def ^:publish fromjson
+  (mfn mfn-fromjson {:mf-expr 'fromjson} [x]
+       (list (json/parse-string (get-value x)))))
 
 (def-mfc try [expr] [x]
   (try (doall (invoke-value expr x))
        (catch Exception ex ())))
 
-(defcq jq-tree-seq
-  (def jq-tree-seq
-    (mfn mfn-jq-tree-seq {:mf-expr 'jq-tree-seq} [x]
-         (tree-seq coll?
-                   #(if (map? %) (vals %) (seq %))
-                   x))))
+(def ^:publish jq-tree-seq
+  (mfn mfn-jq-tree-seq {:mf-expr 'jq-tree-seq} [x]
+       (tree-seq coll?
+                 #(if (map? %) (vals %) (seq %))
+                 x)))
 
 
