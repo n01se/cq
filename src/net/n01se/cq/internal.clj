@@ -35,26 +35,16 @@
 (declare &)
 (declare invoke)
 (declare invoke-value)
-(declare eval1)
+(declare cq-eval1)
 
 (defn nav-get [parent idx]
-  (reify INavigation
+  (reify
+    Object (toString [_] (str "nav-get " (pr-str idx) " on " parent))
+    INavigation
     (get-value [_] (get (get-value parent) idx))
     (get-path [_] (conj (get-path parent) idx))
-    (modify* [me base f] (modify* parent base #(update % idx f)))))
-
-(def-mfc get [mf] [x]
-  (let [path-elems (invoke-value mf x)]
-    (map #(nav-get x %) path-elems)))
-
-(def-mfc modify [path-mf value-mf] [x]
-  (list
-   (reduce
-    (fn [acc nav]
-      ;; some versions before jq-1.6 use `last` instead of eval1's `first`:
-      (modify* nav acc #(eval1 % value-mf)))
-    x
-    (invoke path-mf x))))
+    (modify* [me base f]
+      (modify* parent base #(update % idx f)))))
 
 (defn invoke [mf x]
   (cond
@@ -137,6 +127,20 @@
      (let [~arg-syms args#]
        (mfn ~(symbol (str "mfn-" sym)) {:mfc-expr (cons '~sym args#)} [~this-sym]
             ~@body))))
+
+(def-mfc get [mf] [x]
+  (let [path-elems (invoke-value mf x)]
+    (map #(nav-get x %) path-elems)))
+
+(def-mfc modify [path-mf value-mf] [x]
+  (let [xval (get-value x)]
+    (list
+     (reduce
+      (fn [acc nav]
+        ;; some versions before jq-1.6 use `last` instead of eval1's `first`:
+        (modify* nav acc #(cq-eval1 % value-mf)))
+      xval
+      (invoke path-mf xval)))))
 
 (defn ^{:publish 'eval} cq-eval
   ([mf] (invoke-value mf nil))
