@@ -33,10 +33,13 @@
       (clj/= cq jq-out))))
 
 (defmacro deft [n jq expr]
-  `(t/deftest ~(with-meta n {:jq jq})
-     (let [cq# (cq/eval (cq/with-refer-all [~'cq] ~expr))]
-       (assert (check-jq cq# ~jq))
-       cq#)))
+  `(def ~(vary-meta n assoc
+                    :jq jq
+                    :test `(fn []
+                             (let [cq# (cq/eval (cq/with-refer-all [~'cq] ~expr))]
+                               (assert (check-jq cq# ~jq))
+                               cq#)))
+     (fn [] ((:test (meta (var ~n)))))))
 
 (defn test-here []
   (dorun (map #(%) (keep (comp :test meta val) (ns-publics *ns*))))
