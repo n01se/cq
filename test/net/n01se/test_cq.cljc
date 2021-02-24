@@ -66,38 +66,39 @@
 
 ;; EXPERIMENTAL dynamically rooted paths
 
-(deft tx3
-  "[0],[3,4],[1],[2,5]" ;; is this right?
-  #_"def f(p): [p] | path(.[]),(.[] |= .+1); [2,4] | f(.[0,1])"  ;; or this? [0] [1] [3 5]
-  (| [2 4]
-     rooted
-     (get (& 0 1))
-     (& rooted-path
-        (rooted-reset (+ . 1)))))
+(comment
+  (deft tx3
+    "[0],[3,4],[1],[2,5]" ;; is this right?
+    #_"def f(p): [p] | path(.[]),(.[] |= .+1); [2,4] | f(.[0,1])"  ;; or this? [0] [1] [3 5]
+    (| [2 4]
+       rooted
+       (get (& 0 1))
+       (& rooted-path
+          (rooted-reset (+ . 1)))))
 
-(deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
-  (| (& [[1]] [[5]])
-     (get 0)
-     rooted
-     (get 0)
-     (& rooted-path
-       (rooted-reset (+ . 1)))))
+  (deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
+    (| (& [[1]] [[5]])
+       (get 0)
+       rooted
+       (get 0)
+       (& rooted-path
+          (rooted-reset (+ . 1)))))
 
-(deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
-  (| (& [[1]] [[5]])
-     rooted
-     (get 0)
-     (get 0)
-     (& rooted-path
-       (rooted-reset (+ . 1)))))
+  (deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
+    (| (& [[1]] [[5]])
+       rooted
+       (get 0)
+       (get 0)
+       (& rooted-path
+          (rooted-reset (+ . 1)))))
 
-(deft tx0 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
-  (| [[5]]
-     rooted
-     (get 0)
-     (get 0)
-     (& rooted-path
-       (rooted-reset (+ . 1)))))
+  (deft tx0 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
+    (| [[5]]
+       rooted
+       (get 0)
+       (get 0)
+       (& rooted-path
+          (rooted-reset (+ . 1))))))
 
 ;; .[] all
 ;; .   .

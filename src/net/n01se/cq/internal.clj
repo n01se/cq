@@ -5,59 +5,6 @@
             [clojure.walk :refer [postwalk]]))
 
 (binding [*ns* *ns*] (in-ns 'net.n01se.cq))
-(alias 'cq 'net.n01se.cq)
-
-;; ValuePath
-;; This is a bit like a writer monad with root as the value and path as the log?
-(defprotocol IValuePath
-  (get-value [_] "Return the resolved, normal Clojure value")
-  (get-root [_] "Return the root, normal Clojure value. Throw if not ValuePath")
-  (get-path [_] "Return the path vector")
-  (update-path* [x f args]
-    "Return ValuePath with same root as x and path of (apply f old-path args).
-     If x is not a ValuePath, return a ValuePath rooted at x with value x"))
-
-(deftype ValuePath [root-value path]
-  Object
-  (equals [a b] (and (= (.root-value a) (.root-value b))
-                     (= (.path a) (.path b))))
-
-  IValuePath
-  (get-value [x] (reduce (fn [v i]
-                           (cond
-                             (nil? v) nil
-                             (seq? v) (nth v i)
-                             (vector? v) (get v i)
-                             (associative? v) (v i)
-                             :else (throw (Exception.
-                                           (str "Illegal lookup on " (type v))))))
-                         root-value path))
-  (get-root [x] root-value)
-  (get-path [x] path)
-  (update-path* [x f args] (ValuePath. root-value (apply f path args))))
-
-(defmethod print-method ValuePath [o w]
-  (.write w (str "#cq/ValuePath" {:root (.root-value o)
-                                  :path (.path o)})))
-
-(def DefaultIValuePath
-  {:get-value identity
-   :get-root #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
-   :get-path #(throw (ex-info (str "Invalid path expression: " %) {:path %}))
-   :update-path* (fn [x f args] (ValuePath. x (apply f [] args)))})
-
-(extend nil     IValuePath DefaultIValuePath)
-(extend Object  IValuePath DefaultIValuePath)
-
-(defn update-path [x f & args]
-  (update-path* x f args))
-
-(defn as-value-path [x]
-  (update-path x identity))
-
-(defn reroot-path [x]
-  (as-value-path (get-value x)))
-
 
 (defn cartesian-product
   "All the ways to take one item from each sequence"
@@ -69,8 +16,45 @@
           [()]
           (reverse colls)))
 
+;; Navigation
+(defprotocol INavigation
+  (get-value [_])
+  (get-path [_])
+  ;; TODO: add replace (for =, vs modify's |=)
+  (modify* [_ base f]))
+
+(def DefaultINavigation
+  {:get-value identity
+   :get-path (constantly [])
+   :modify* (fn [me base f] (f base))})
+
+(extend nil     INavigation DefaultINavigation)
+(extend Object  INavigation DefaultINavigation)
+
+;; TODO move invoke/eval to above INavigation?
 (declare &)
+(declare invoke)
 (declare invoke-value)
+(declare eval1)
+
+(defn nav-get [parent idx]
+  (reify INavigation
+    (get-value [_] (get (get-value parent) idx))
+    (get-path [_] (conj (get-path parent) idx))
+    (modify* [me base f] (modify* parent base #(update % idx f)))))
+
+(def-mfc get [mf] [x]
+  (let [path-elems (invoke-value mf x)]
+    (map #(nav-get x %) path-elems)))
+
+(def-mfc modify [path-mf value-mf] [x]
+  (list
+   (reduce
+    (fn [acc nav]
+      ;; some versions before jq-1.6 use `last` instead of eval1's `first`:
+      (modify* nav acc #(eval1 % value-mf)))
+    x
+    (invoke path-mf x))))
 
 (defn invoke [mf x]
   (cond
@@ -88,6 +72,7 @@
     (nil? mf) (list nil) ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
+;; TODO: get rid of this in favor of cq-eval everywhere
 (defn invoke-value [mf x]
   (map get-value (invoke mf x)))
 
@@ -189,16 +174,16 @@
   `(when-not ~expr
      (throw (ex-info ~(or msg (pr-str expr)) {:expr '~expr}))))
 
-(def ^:publish all
+(def ^:publish all ;; TODO: rename to `each`?
   (mfn mfn-all {:mf-expr 'all} [x]
        (let [coll (get-value x)]
          (ex-assert (coll? coll)
                     (str "`all` requires a seqable collection, not "
                          (type coll) ": " (pr-str coll)))
-         (map-indexed (fn [i y] (update-path x conj i)) coll))))
+         (map-indexed (fn [i _] (nav-get x i)) coll))))
 
 (def-mfc path [mf] [x]
-  (map get-path (invoke mf (reroot-path x))))
+  (map get-path (invoke mf (get-value x))))
 
 (def-mfc first [mf] [x]
   (take 1 (invoke-value mf x)))
@@ -263,40 +248,25 @@
   `(binding [internal/*tracing* 1]
      ~@body))
 
-(def-mfc get [mf] [x]
-  (let [path-elems (invoke-value mf x)]
-    (map #(update-path x conj %) path-elems)))
-
-(def-mfc modify [path-mf value-mf] [x]
-  (list
-   (reduce
-    (fn [acc value-path]
-      ;; some versions before jq-1.6 use `last` instead of `first`:
-      (let [deep-value (get-value (first (invoke value-mf value-path)))
-            path (get-path value-path)]
-        (if (empty? path)
-          deep-value ;; c'mon, Clojure!
-          (assoc-in acc path deep-value))))
-    (get-value x)
-    (invoke path-mf (reroot-path x)))))
 
 (def-mfc select [mf] [x]
   (mapcat #(when % (list x))
           (invoke-value mf x)))
 
 ;; EXPERIMENTAL dynamically rooted paths
-(def ^:publish rooted
-  (mfn mfn-rooted {:mf-expr 'rooted} [x]
-       (list (reroot-path x))))
+(comment
+  (def ^:publish rooted
+    (mfn mfn-rooted {:mf-expr 'rooted} [x]
+         (list (get-value x))))
 
-(def ^:publish rooted-path
-  (mfn mfn-rooted-path {:mf-expr 'rooted-path} [x]
-       (list (get-path x))))
+  (def ^:publish rooted-path
+    (mfn mfn-rooted-path {:mf-expr 'rooted-path} [x]
+         (list (get-path x))))
 
-(def-mfc rooted-reset [mf] [x]
-  (list
-   (let [deep-value (get-value (first (invoke mf x)))]
-     (assoc-in (get-root x) (get-path x) deep-value))))
+  (def-mfc rooted-reset [mf] [x]
+    (list
+     (let [deep-value (get-value (first (invoke mf x)))]
+       (assoc-in (get-root x) (get-path x) deep-value)))))
 
 (defn ^:publish lift [f & [{:keys [sym]}]]
   (fn lifted [& mf]
