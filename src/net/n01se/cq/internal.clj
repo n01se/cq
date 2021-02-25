@@ -126,14 +126,13 @@
 (declare invoke invoke-value cq-eval1 cq-eval)
 
 (defprotocol INavigation
-  (get-value [_])
-  (get-path [_])
-  ;; TODO: add replace (for =, vs modify's |=)
+  (navigate [_] "return value by applying navigation")
+  (chart [_] "return description of navigation")
   (modify* [_ base f]))
 
 (def DefaultINavigation
-  {:get-value identity
-   :get-path (constantly [])
+  {:navigate identity
+   :chart (constantly [])
    :modify* (fn [me base f] (f base))})
 
 (extend nil     INavigation DefaultINavigation)
@@ -143,8 +142,8 @@
   (reify
     Object (toString [_] (str "nav-get " (pr-str idx) " on " parent))
     INavigation
-    (get-value [_] (get (get-value parent) idx))
-    (get-path [_] (conj (get-path parent) idx))
+    (navigate [_] (get (navigate parent) idx))
+    (chart [_] (conj (chart parent) idx))
     (modify* [me base f]
       (modify* parent base #(update % idx f)))))
 
@@ -153,7 +152,7 @@
     (map #(nav-get x %) path-elems)))
 
 (def-mfc modify [path-mf value-mf] [x]
-  (let [xval (get-value x)]
+  (let [xval (navigate x)]
     (list
      (reduce
       (fn [acc nav]
@@ -163,7 +162,7 @@
       (invoke path-mf xval)))))
 
 (def-mfc assign [nav-mf value-mf] [x]
-  (let [xval (get-value x)
+  (let [xval (navigate x)
         navs (invoke nav-mf xval)
         values (cq-eval xval value-mf)]
     (map (fn [value]
@@ -177,7 +176,7 @@
 
 ;; TODO: get rid of this in favor of cq-eval everywhere
 (defn invoke-value [mf x]
-  (map get-value (invoke mf x)))
+  (map navigate (invoke mf x)))
 
 (defn ^{:publish 'eval} cq-eval
   ([mf] (invoke-value mf nil))
@@ -235,14 +234,14 @@
 
 (def ^:publish all ;; TODO: rename to `each`?
   (mfn mfn-all {:mf-expr 'all} [x]
-       (let [coll (get-value x)]
+       (let [coll (navigate x)]
          (ex-assert (coll? coll)
                     (str "`all` requires a seqable collection, not "
                          (type coll) ": " (pr-str coll)))
          (map-indexed (fn [i _] (nav-get x i)) coll))))
 
 (def-mfc path [mf] [x]
-  (map get-path (invoke mf (get-value x))))
+  (map chart (invoke mf (navigate x))))
 
 (def-mfc first [mf] [x]
   (take 1 (invoke-value mf x)))
@@ -281,16 +280,16 @@
 (comment
   (def ^:publish rooted
     (mfn mfn-rooted {:mf-expr 'rooted} [x]
-         (list (get-value x))))
+         (list (navigate x))))
 
   (def ^:publish rooted-path
     (mfn mfn-rooted-path {:mf-expr 'rooted-path} [x]
-         (list (get-path x))))
+         (list (chart x))))
 
   (def-mfc rooted-reset [mf] [x]
     (list
-     (let [deep-value (get-value (first (invoke mf x)))]
-       (assoc-in (get-root x) (get-path x) deep-value)))))
+     (let [deep-value (navigate (first (invoke mf x)))]
+       (assoc-in (get-root x) (chart x) deep-value)))))
 
 (defn ^:publish lift [f & [{:keys [sym]}]]
   (fn lifted [& mf]
@@ -376,11 +375,11 @@
 
 (def ^:publish tojson
   (mfn mfn-tojson {:mf-expr 'tojson} [x]
-       (list (json/generate-string (get-value x)))))
+       (list (json/generate-string (navigate x)))))
 
 (def ^:publish fromjson
   (mfn mfn-fromjson {:mf-expr 'fromjson} [x]
-       (list (json/parse-string (get-value x)))))
+       (list (json/parse-string (navigate x)))))
 
 (def-mfc try [expr] [x]
   (try (doall (invoke-value expr x))
