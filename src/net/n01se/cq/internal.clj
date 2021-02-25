@@ -123,7 +123,7 @@
 
 ;;=== Navigation
 
-(declare invoke invoke-value cq-eval1)
+(declare invoke invoke-value cq-eval1 cq-eval)
 
 (defprotocol INavigation
   (get-value [_])
@@ -162,6 +162,16 @@
       xval
       (invoke path-mf xval)))))
 
+(def-mfc assign [nav-mf value-mf] [x]
+  (let [xval (get-value x)
+        navs (invoke nav-mf xval)
+        values (cq-eval xval value-mf)]
+    (map (fn [value]
+           (reduce (fn [xval nav]
+                     (modify* nav xval (constantly value)))
+             xval
+             navs))
+         values)))
 
 ;;=== invoke and eval
 
