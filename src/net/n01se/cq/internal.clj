@@ -6,6 +6,8 @@
 
 (binding [*ns* *ns*] (in-ns 'net.n01se.cq))
 
+;;=== utility functions and macros
+
 (defn cartesian-product
   "All the ways to take one item from each sequence"
   [colls]
@@ -16,55 +18,44 @@
           [()]
           (reverse colls)))
 
-;; Navigation
-(defprotocol INavigation
-  (get-value [_])
-  (get-path [_])
-  ;; TODO: add replace (for =, vs modify's |=)
-  (modify* [_ base f]))
+(defmacro ex-assert [expr & [msg]]
+  `(when-not ~expr
+     (throw (ex-info ~(or msg (pr-str expr)) {:expr '~expr}))))
 
-(def DefaultINavigation
-  {:get-value identity
-   :get-path (constantly [])
-   :modify* (fn [me base f] (f base))})
+(defn var-name [the-var]
+  (symbol (second (re-matches #"#'(.*)" (str the-var)))))
 
-(extend nil     INavigation DefaultINavigation)
-(extend Object  INavigation DefaultINavigation)
+(defmacro ^:publish with-refer-all
+  "Take a vector of namespaces (or ns aliases) and make all their publics
+  available without qualification to the body param."
+  [ns-name-vector & body]
+  ;; Non-macro vars are provided in an outer `let`, allowing normal shadowing in
+  ;; the body. Since macros cannot be bound via `let`, the body is walked
+  ;; looking for macro invocations, and the macro name is replaced with the
+  ;; fully-qualified form.
+  (let [aliases (ns-aliases *ns*)
+        ns-list (map #(or (get aliases %) (the-ns %)) ns-name-vector)
+        var-map (apply merge-with (fn [a b] a) (map ns-publics ns-list))
+        {macros true, others nil} (group-by #(:macro (meta (val %))) var-map)
+        macro-map (into {} macros)
+        others-map (dissoc (into {} others) '. '&)]
+    `(let [~@(->> (tree-seq coll? seq body)
+                  (mapcat (fn [form]
+                            (when-let [[sym v] (find others-map form)]
+                              [sym (var-name v)]))))]
+       ~@(postwalk
+          (fn [form]
+            (if-let [[sym v]
+                     (and (seq? form) (find macro-map (first form)))]
+              (list* (var-name v) (rest form))
+              form))
+          body))))
 
-;; TODO move invoke/eval to above INavigation?
-(declare &)
-(declare invoke)
-(declare invoke-value)
-(declare cq-eval1)
 
-(defn nav-get [parent idx]
-  (reify
-    Object (toString [_] (str "nav-get " (pr-str idx) " on " parent))
-    INavigation
-    (get-value [_] (get (get-value parent) idx))
-    (get-path [_] (conj (get-path parent) idx))
-    (modify* [me base f]
-      (modify* parent base #(update % idx f)))))
+;;=== list monad support (emit, tracing, mfc, and def-mfc)
 
-(defn invoke [mf x]
-  (cond
-    (number? mf) (list mf)
-    (string? mf) (list mf)
-    (boolean? mf) (list mf)
-    (keyword? mf) (list mf)
-    (vector? mf) (list (vec (invoke-value (apply & mf) x)))
-    (map? mf) (->> (apply concat mf)
-                   (map #(invoke-value % x))
-                   cartesian-product
-                   (map #(apply array-map %)))
-    (fn? mf) (mf x)
-    (var? mf) (mf x)
-    (nil? mf) (list nil) ;; Complain? jq doesn't
-    :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
-
-;; TODO: get rid of this in favor of cq-eval everywhere
-(defn invoke-value [mf x]
-  (map get-value (invoke mf x)))
+;; There is a list monad at the base of our operations: ...where "unit" is list
+;; (aka `.`) and "bind" is mapcat except the arguments are reversed
 
 (declare emit)
 
@@ -84,8 +75,9 @@
   (when *tracing*
     (apply println (apply str (repeat *mfn-depth* " ")) args)))
 
-;; There is a list monad at the base of our operations: ...where "unit" is list
-;; (aka `.`) and "bind" is mapcat except the arguments are reversed
+(defmacro ^:publish with-tracing [& body]
+  `(binding [*tracing* 1]
+     ~@body))
 
 (def heavy-runtime true) ;; not sure how to parameterize this
 (if heavy-runtime
@@ -128,6 +120,34 @@
        (mfn ~(symbol (str "mfn-" sym)) {:mfc-expr (cons '~sym args#)} [~this-sym]
             ~@body))))
 
+
+;;=== Navigation
+
+(declare invoke invoke-value cq-eval1)
+
+(defprotocol INavigation
+  (get-value [_])
+  (get-path [_])
+  ;; TODO: add replace (for =, vs modify's |=)
+  (modify* [_ base f]))
+
+(def DefaultINavigation
+  {:get-value identity
+   :get-path (constantly [])
+   :modify* (fn [me base f] (f base))})
+
+(extend nil     INavigation DefaultINavigation)
+(extend Object  INavigation DefaultINavigation)
+
+(defn nav-get [parent idx]
+  (reify
+    Object (toString [_] (str "nav-get " (pr-str idx) " on " parent))
+    INavigation
+    (get-value [_] (get (get-value parent) idx))
+    (get-path [_] (conj (get-path parent) idx))
+    (modify* [me base f]
+      (modify* parent base #(update % idx f)))))
+
 (def-mfc get [mf] [x]
   (let [path-elems (invoke-value mf x)]
     (map #(nav-get x %) path-elems)))
@@ -142,6 +162,13 @@
       xval
       (invoke path-mf xval)))))
 
+
+;;=== invoke and eval
+
+;; TODO: get rid of this in favor of cq-eval everywhere
+(defn invoke-value [mf x]
+  (map get-value (invoke mf x)))
+
 (defn ^{:publish 'eval} cq-eval
   ([mf] (invoke-value mf nil))
   ([input mf] (invoke-value mf input)))
@@ -149,6 +176,28 @@
 (defn ^{:publish 'eval1} cq-eval1 ;; TODO: throw if more than one in return list?
   ([mf] (first (invoke-value mf nil)))
   ([input mf] (first (invoke-value mf input))))
+
+(declare &)
+
+;; invoke lifts Clojure constants into monadic functions
+(defn invoke [mf x]
+  (cond
+    (number? mf) (list mf)
+    (string? mf) (list mf)
+    (boolean? mf) (list mf)
+    (keyword? mf) (list mf)
+    (vector? mf) (list (vec (invoke-value (apply & mf) x)))
+    (map? mf) (->> (apply concat mf)
+                   (map #(invoke-value % x))
+                   cartesian-product
+                   (map #(apply array-map %)))
+    (fn? mf) (mf x)
+    (var? mf) (mf x)
+    (nil? mf) (list nil) ;; Complain? jq doesn't
+    :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
+
+
+;;=== cq library of monadic functions and their constructors
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
 (defn ^:publish & ;; a.k.a. comma or span
@@ -173,10 +222,6 @@
 
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; Its mplus would be apply concat
-
-(defmacro ex-assert [expr & [msg]]
-  `(when-not ~expr
-     (throw (ex-info ~(or msg (pr-str expr)) {:expr '~expr}))))
 
 (def ^:publish all ;; TODO: rename to `each`?
   (mfn mfn-all {:mf-expr 'all} [x]
@@ -217,41 +262,6 @@
                                                          (name fn-sym))})])
                         fn-vec)]
           (invoke ~mf x#))))
-
-
-(defn var-name [the-var]
-  (symbol (second (re-matches #"#'(.*)" (str the-var)))))
-
-(defmacro ^:publish with-refer-all
-  "Take a vector of namespaces (or ns aliases) and make all their publics
-  available without qualification to the body param."
-  [ns-name-vector & body]
-  ;; Non-macro vars are provided in an outer `let`, allowing normal shadowing in
-  ;; the body. Since macros cannot be bound via `let`, the body is walked
-  ;; looking for macro invocations, and the macro name is replaced with the
-  ;; fully-qualified form.
-  (let [aliases (ns-aliases *ns*)
-        ns-list (map #(or (get aliases %) (the-ns %)) ns-name-vector)
-        var-map (apply merge-with (fn [a b] a) (map ns-publics ns-list))
-        {macros true, others nil} (group-by #(:macro (meta (val %))) var-map)
-        macro-map (into {} macros)
-        others-map (dissoc (into {} others) '. '&)]
-    `(let [~@(->> (tree-seq coll? seq body)
-                  (mapcat (fn [form]
-                            (when-let [[sym v] (find others-map form)]
-                              [sym (var-name v)]))))]
-       ~@(postwalk
-          (fn [form]
-            (if-let [[sym v]
-                     (and (seq? form) (find macro-map (first form)))]
-              (list* (var-name v) (rest form))
-              form))
-          body))))
-
-(defmacro ^:publish with-tracing [& body]
-  `(binding [internal/*tracing* 1]
-     ~@body))
-
 
 (def-mfc select [mf] [x]
   (mapcat #(when % (list x))
