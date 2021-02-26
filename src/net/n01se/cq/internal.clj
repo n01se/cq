@@ -279,10 +279,11 @@
 (defmacro ^{:publish 'let} cq-let
   [[sym sym-mf] mf]
   `(mfn ~'mfn-cq-let {:mfc-expr '~(list 'cq-let [sym sym-mf] mf)} [x#]
-        (let [value# (invoke ~sym-mf x#)
-              ~sym (constantly value#)
-              result# (invoke ~mf x#)]
-          result#)))
+        (->>
+         (invoke ~sym-mf x#)
+         (mapcat (fn [value#]
+                   (let [~sym (constantly (list value#))]
+                     (invoke ~mf x#)))))))
 
 (defmacro ^{:publish 'letfn} cq-letfn
   [fnforms mf]
