@@ -144,12 +144,39 @@
     INavigation
     (navigate [_] (get (navigate parent) idx))
     (chart [_] (conj (chart parent) idx))
-    (modify* [me base f]
+    (modify* [_ base f]
       (modify* parent base #(update % idx f)))))
 
 (def-mfc get [mf] [x]
   (let [path-elems (invoke-value mf x)]
     (map #(nav-get x %) path-elems)))
+
+(defn nav-slice [parent start-idx end-idx]
+  (let [my-get (fn [x]
+                 (->> x
+                      (drop start-idx)
+                      (take (- end-idx start-idx))
+                      vec))]
+    (reify
+      Object (toString [_] (str "nav-slice " (pr-str start-idx) "-"
+                                (pr-str end-idx) " on " parent))
+      INavigation
+      (navigate [_] (my-get (navigate parent)))
+      (chart [_] (conj (chart parent) {:start start-idx, :end end-idx}))
+      (modify* [_ base f]
+        (modify* parent base #(let [mid (f (my-get %))]
+                                (assert (sequential? mid)
+                                        (str "modify on slice must return sequential, not "
+                                             (type mid) ": " (pr-str mid)))
+                                (concat (take start-idx %)
+                                        mid
+                                        (drop end-idx %))))))))
+
+(def-mfc slice [start-mf end-mf] [x]
+  (map (fn [[start-idx end-idx]]
+         (nav-slice x start-idx end-idx))
+       (cartesian-product [(cq-eval x start-mf)
+                           (cq-eval x end-mf)])))
 
 (def-mfc modify [path-mf value-mf] [x]
   (let [xval (navigate x)]
@@ -292,10 +319,10 @@
        (assoc-in (get-root x) (chart x) deep-value)))))
 
 (defn ^:publish lift [f & [{:keys [sym]}]]
-  (fn lifted [& mf]
-    (mfn mfn-lift {:mfc-expr (cons sym mf)} [x]
+  (fn lifted [& mfs]
+    (mfn mfn-lift {:mfc-expr (cons sym mfs)} [x]
          (map #(apply f %)
-              (cartesian-product (map #(invoke-value % x) mf))))))
+              (cartesian-product (map #(invoke-value % x) mfs))))))
 
 ;; Fully-short-circuiting `and` -- perhaps put in jq-compatibility namespace?
 #_

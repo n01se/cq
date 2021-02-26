@@ -17,7 +17,7 @@ exp00 = <ws>? "if" <ws>? exp05 <ws> <"then"> exp05 <ws> <"else"> exp05 <ws> <"en
 exp05 = exp10 (as? <ws>? "|" exp10)*
 exp10 = exp20 (<ws>? "," exp20)*
 exp20 = exp30
-exp30 = exp40 (<ws>? "|=" exp40)?
+exp30 = exp40 (<ws>? ("|="|"=") exp40)?
 exp40 = exp50
 exp50 = exp60 (<ws>? ("!="|"=="|"<"|">"|"<="|">=") exp60)*
 exp60 = exp70 (<ws>? ("+"|"-") exp70)*

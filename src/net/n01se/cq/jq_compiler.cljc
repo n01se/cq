@@ -18,6 +18,7 @@
    "<"  `cq/<
    ">=" `cq/>=
    "<=" `cq/<=
+   "="  'cq/assign
    "|=" `cq/modify})
 
 (declare jq-compile)
@@ -130,7 +131,7 @@
                 (case (count vs)
                   1 `(cq/| ~a cq/all) ;; all .[]
                   2 `(cq/| ~a (cq/get ~b))  ;; navigate
-                  3 `(cq/slice ~b ~c))) ;; slice
+                  3 `(cq/| ~a (cq/slice ~b ~c)))) ;; slice
           "{" (into {} (map (fn [[_ [knode :as k] v]]
                               (let [kc (jq-compile k)
                                     kc (if (symbol? kc) (str kc) kc)]
