@@ -18,6 +18,10 @@
           [()]
           (reverse colls)))
 
+(defn cartesian-product-rev
+  [colls]
+  (map reverse (cartesian-product (reverse colls))))
+
 (defmacro ex-assert [expr & [msg]]
   `(when-not ~expr
      (throw (ex-info ~(or msg (pr-str expr)) {:expr '~expr}))))
@@ -170,13 +174,13 @@
                                              (type mid) ": " (pr-str mid)))
                                 (concat (take start-idx %)
                                         mid
-                                        (drop end-idx %))))))))
+                                        (drop (max start-idx end-idx) %))))))))
 
 (def-mfc slice [start-mf end-mf] [x]
   (map (fn [[start-idx end-idx]]
          (nav-slice x start-idx end-idx))
-       (cartesian-product [(cq-eval x start-mf)
-                           (cq-eval x end-mf)])))
+       (cartesian-product-rev [(cq-eval x start-mf)
+                               (cq-eval x end-mf)])))
 
 (def-mfc modify [path-mf value-mf] [x]
   (let [xval (navigate x)]
