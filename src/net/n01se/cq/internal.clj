@@ -55,6 +55,11 @@
               form))
           body))))
 
+(defmacro ^:publish do
+  "Convenience macro for `(with-refer-all [cq] (eval ~@body))"
+  [& body]
+  `(with-refer-all [net.n01se.cq] (cq-eval ~@body)))
+
 
 ;;=== list monad support (emit, tracing, mfc, and def-mfc)
 
@@ -182,6 +187,7 @@
        (cartesian-product-rev [(cq-eval x start-mf)
                                (cq-eval x end-mf)])))
 
+;; TODO clearly document first-behavior of value-mf
 (def-mfc modify [path-mf value-mf] [x]
   (let [xval (navigate x)]
     (list
@@ -359,6 +365,7 @@
 (def-lift < clj/<)
 (def-lift >= clj/>=)
 (def-lift <= clj/<=)
+(def-lift vector clj/vector)
 
 ;; These are not like the jq functions; they return all combinatorics because we
 ;; think that makes sense. They do not short-circuit:
