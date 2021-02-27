@@ -1,14 +1,16 @@
 (ns net.n01se.cq.jq-compiler
+  (:refer-clojure :exclude [compile])
   (:require [clojure.java.io :as io]
             [instaparse.core :as insta]
-            [net.n01se.cq :as cq]))
+            [net.n01se.cq :as cq :refer [. &]]
+            [net.n01se.cq.jq-compat :as jq]))
 
 (def parse (insta/parser
             (slurp (io/resource "net/n01se/cq/jq.grammar"))))
 
 (def op-symbols
   {","  `cq/&
-   "+"  `cq/jq-+
+   "+"  `jq/+
    "-"  `cq/-
    "*"  `cq/*
    "/"  `cq//
@@ -21,7 +23,7 @@
    "="  'cq/assign
    "|=" `cq/modify})
 
-(declare jq-compile)
+(declare compile)
 
 (defn compile-infix-list
   "Compile a list of same-precedent infix ops and operands into grouped cq forms."
@@ -32,42 +34,42 @@
        (reduce (fn [left-form run]
                  (list* (get op-symbols (ffirst run))
                         left-form
-                        (map (comp jq-compile second) run)))
-               (jq-compile (first args)))))
+                        (map (comp compile second) run)))
+               (compile (first args)))))
 
-(defn jq-compile [[node & args :as arg]]
+(defn compile [[node & args :as arg]]
   (case node
-    :statements (jq-compile (last args))
+    :statements (compile (last args))
     :number (read-string (first args))
     :vector (if-let [v (first args)]
-              [(jq-compile v)]
+              [(compile v)]
               [])
 
-    :str    `(cq/str ~@(map jq-compile args))
+    :str    `(cq/str ~@(map compile args))
     :istr   (read-string (str \" (first args) \"))
-    :format `(cq/jq-format ~(keyword (first args)))
+    :format `(jq/format ~(keyword (first args)))
     :format-interp (let [[format-node [_ & parts]] args]
                      `(cq/str ~@(map (fn [[snode :as expr]]
                                           (if (= :istr snode)
-                                            (jq-compile expr)
-                                            `(cq/| ~(jq-compile expr)
-                                                   ~(jq-compile format-node))))
+                                            (compile expr)
+                                            `(cq/| ~(compile expr)
+                                                   ~(compile format-node))))
                                         parts)))
 
     :invoke (let [ident (-> args first second)
-                  args (map jq-compile (next args))]
+                  args (map compile (next args))]
               (case ident
                 "true" true
                 "false" false
                 "null" nil
                 "empty" `(cq/&)
                 "first" (if (empty? args)
-                          `(cq/get 0)
+                          `(jq/jq-get 0)
                           `(cq/first ~@args))
                 "path" `(cq/path ~@args)
                 "select" `(cq/select ~@args)
-                "tojson" `cq/tojson
-                "fromjson" `cq/fromjson
+                "tojson" `(jq/tojson .)
+                "fromjson" `(jq/fromjson .)
                 ;; Maybe, hopefully, a local?
                 (if (empty? args)
                   (symbol ident)
@@ -77,8 +79,8 @@
                                  (let [[_ [_ ident] [_ & params] fexpr] d]
                                    `(~(symbol ident)
                                      [~@(map #(symbol (get-in % [1 1])) params)]
-                                     ~(jq-compile fexpr))))))
-                expr (jq-compile (last args))]
+                                     ~(compile fexpr))))))
+                expr (compile (last args))]
             (if (empty? defs)
               expr
               `(cq/letfn [~@defs]
@@ -88,7 +90,7 @@
       (cond
         ;; auto-recurse non-terminal rules
         (and (= 1 (count args)) (vector? (first args)))
-        (jq-compile (first args))
+        (compile (first args))
 
         ;; in-fix operators
         (get op-symbols first-str)
@@ -100,16 +102,16 @@
                                            (cons nil args)
                                            args)
                     right (if lnode
-                            `(cq/get ~(if (= :ident ltype)
-                                        (second lnode)
-                                        (jq-compile lnode)))
+                            `(jq/jq-get ~(if (= :ident ltype)
+                                           (second lnode)
+                                           (compile lnode)))
                             `cq/.)]
                 (if left
-                  `(cq/| ~(jq-compile left) ~right)
+                  `(cq/| ~(compile left) ~right)
                   right))
           "$" (symbol (str "$" (-> args second second)))
-          "?" `(cq/try ~(jq-compile (first args)))
-          ".." `cq/jq-tree-seq
+          "?" `(jq/try ~(compile (first args)))
+          ".." `jq/jq-tree-seq
           "|" (let [parts (take-nth 2 (partition-by (partial = "|") args))
                     runs (reverse (partition-by second (drop-last parts)))]
                 (reduce (fn [form run]
@@ -118,30 +120,37 @@
                             `(cq/let [~@(mapcat
                                             (fn [[expr as]]
                                               [(symbol (str "$" (get-in as [2 1])))
-                                               (jq-compile expr)])
+                                               (compile expr)])
                                             run)]
                                         ~form)
 
                             ;; non-"as"-run
-                            `(cq/| ~@(map (comp jq-compile first) run)
+                            `(cq/| ~@(map (comp compile first) run)
                                    ~form)))
-                        (jq-compile (first (last parts)))
+                        (compile (first (last parts)))
                         runs))
-          "[" (let [[a b c :as vs] (map jq-compile (remove string? args))]
+          "[" (let [[a b c :as vs] (map compile (remove string? args))]
                 (case (count vs)
-                  1 `(cq/| ~a cq/all) ;; all .[]
-                  2 `(cq/| ~a (cq/get ~b))  ;; navigate
-                  3 `(cq/| ~a (cq/slice ~b ~c)))) ;; slice
+                  1 `(cq/| ~a jq/all) ;; all .[]
+                  2 `(cq/| ~a (jq/jq-get ~b))  ;; navigate
+                  3 `(cq/| ~a (jq/slice ~b ~c)))) ;; slice
           "{" (into {} (map (fn [[_ [knode :as k] v]]
-                              (let [kc (jq-compile k)
+                              (let [kc (compile k)
                                     kc (if (symbol? kc) (str kc) kc)]
                                 (if v
-                                  [kc (jq-compile v)]
-                                  [kc `(cq/get ~kc)])))
+                                  [kc (compile v)]
+                                  [kc `(jq/jq-get ~kc)])))
                             (rest args)))
-          "if" `(cq/if ~@(map jq-compile (rest args)))
+          "if" `(cq/if ~@(map compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))
+
+(defn compile-str [jq-str]
+  (let [form (try (-> jq-str parse compile)
+                  (catch Exception ex
+                    (println "parse/compile failed: " jq-str)
+                    (throw ex)))]
+    (eval form)))
 
 ;; Possible simplifications:
 ;; - flatten nested variatic fns (| a (| b c)) -> (| a b c)

@@ -1,7 +1,5 @@
 (ns net.n01se.cq.internal
-  (:require [cheshire.core :as json]
-            [clojure.core :as clj]
-            [clojure.string :as str]
+  (:require [clojure.core :as clj]
             [clojure.walk :refer [postwalk]]))
 
 (binding [*ns* *ns*] (in-ns 'net.n01se.cq))
@@ -73,7 +71,7 @@
     (cons f (map emit args))
     mf-expr))
 
-(defn emit [mf]
+(defn ^:publish emit [mf]
   (cond
     (vector? mf) (mapv emit mf)
     :else (or (emit-meta (meta mf)) mf)))
@@ -101,9 +99,9 @@
     `(let [emitted# (emit-meta ~attr-map)]
        (with-meta
          (fn ~name-sym ~argv
-           (trace "Pipe" ~(first argv) "into" emitted#)
+           (trace "Pipe" (pr-str ~(first argv)) "into" (pr-str emitted#))
            (let [result# (binding [*mfn-depth* (inc *mfn-depth*)] (do ~@body))]
-             (trace "Return" result# "from" emitted#)
+             (trace "Return" (pr-str result#) "from" (pr-str emitted#))
              (assert (sequential? result#)
                      (str "Non-list returned by "
                           emitted#
@@ -182,9 +180,9 @@
                      (take (- end-idx start-idx))
                      vec))
               (lens-put [_ obj newval]
-                (assert (sequential? newval)
-                        (str "modify on slice must return sequential, not "
-                             (type newval) ": " (pr-str newval)))
+                (ex-assert (sequential? newval)
+                           (str "modify on slice must return sequential, not "
+                                (type newval) ": " (pr-str newval)))
                 (concat (take start-idx obj)
                         newval
                         (drop (max start-idx end-idx) obj)))
@@ -278,13 +276,16 @@
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; Its mplus would be apply concat
 
-(def ^:publish all ;; TODO: rename to `each`?
-  (mfn mfn-all {:mf-expr 'all} [x]
+(defn mk-all [getter]
+  (mfn mfn-all {:sym 'all} [x]
        (let [coll (navigate x)]
          (ex-assert (coll? coll)
                     (str "`all` requires a seqable collection, not "
                          (type coll) ": " (pr-str coll)))
-         (map-indexed (fn [i _] (nav-get x i)) coll))))
+         (map-indexed (fn [i _] (getter x i)) coll))))
+
+(def ^:publish all ;; TODO: rename to `each`?
+  (mk-all nav-get))
 
 (def-mfc path [mf] [x]
   (map chart (invoke mf (navigate x))))
@@ -381,62 +382,5 @@
 (def-lift and (fn [a b] (and a b)))
 (def-lift or  (fn [a b] (or  a b)))
 
-
-(def-lift jq-+ #(cond
-                  (every? number? %&) (apply clj/+ %&)
-                  (every? string? %&) (apply str %&)
-                  :else (apply clj/concat %&)))
-
 (def-lift str #(apply str %&))
-
-(defn csv-str [x]
-  (if (string? x)
-    (str \" (str/replace x "\"" "\"\"") \")
-    (str x)))
-(defn tsv-str [x]
-  (if (string? x)
-    (str/replace x "\t" "\\t")
-    (str x)))
-
-(def-mfc jq-format [ftype] [x]
-  (list
-   (case ftype
-     :text x
-     :json (json/generate-string x)
-     :csv (str/join "," (map csv-str x))
-     :tsv (str/join "\t" (map tsv-str x))
-     :html (apply str (map #(case %
-                              \' "&apos;"
-                              \" "&quot;"
-                              \& "&amp;"
-                              \< "&lt;"
-                              \> "&gt;"
-                              %) x))
-     :uri (str/replace x #"[^\w']" (fn [s]
-                                     (->> (.getBytes s)
-                                          (map #(format "%%%02X" %))
-                                          (apply str))))
-     :sh (str \' (str/replace x #"'" "'\\\\''") \')
-     :base64 (String. (.encode (java.util.Base64/getEncoder) (.getBytes x)) "UTF-8")
-     :base64d (String. (.decode (java.util.Base64/getDecoder) x))
-     x)))
-
-(def ^:publish tojson
-  (mfn mfn-tojson {:mf-expr 'tojson} [x]
-       (list (json/generate-string (navigate x)))))
-
-(def ^:publish fromjson
-  (mfn mfn-fromjson {:mf-expr 'fromjson} [x]
-       (list (json/parse-string (navigate x)))))
-
-(def-mfc try [expr] [x]
-  (try (doall (invoke-value expr x))
-       (catch Exception ex ())))
-
-(def ^:publish jq-tree-seq
-  (mfn mfn-jq-tree-seq {:mf-expr 'jq-tree-seq} [x]
-       (tree-seq coll?
-                 #(if (map? %) (vals %) (seq %))
-                 x)))
-
 

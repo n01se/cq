@@ -3,6 +3,7 @@
             [clojure.core :as clj]
             [clojure.java.io :as io]
             [net.n01se.cq.jq-compiler :as jqc]
+            [net.n01se.cq.jq-compat :as jq]
             [clojure.java.shell :refer [sh]]
             [cheshire.core :as json]
             [clojure.string :as str]
@@ -48,11 +49,8 @@
 (defn test-compiler []
   (doseq [[_ v] (ns-publics *ns*)]
     (when-let [jq (-> v meta :jq)]
-      (let [form (try (-> jq jqc/parse jqc/jq-compile)
-                      (catch Exception ex
-                        (println "parse/compile failed: " jq)
-                        (throw ex)))]
-        (when-not (check-jq (cq/eval (eval form)) jq)
+      (let [cq-mfn (jqc/compile-str jq)]
+        (when-not (check-jq (cq/eval cq-mfn) jq)
           (println "check failed: " jq)))))
   :ok)
 
@@ -62,9 +60,8 @@
             (re-seq #"\n(?:#.*\n|\n)+(.+)\n\ufeff?(.+)\n(.+)(?:\n(.+))*" tests)]
       (prn jq)
       (when-not (= "%%FAIL" jq)
-        (let [form (-> jq jqc/parse jqc/jq-compile)]
-          (assert (check-jq (cq/eval (json/parse-string input)
-                                     (eval form))
+        (let [cq-mfn (-> jq jqc/compile-str)]
+          (assert (check-jq (cq/eval (json/parse-string input) cq-mfn)
                             jq input)))))))
 
 ;; EXPERIMENTAL dynamically rooted paths
@@ -155,13 +152,13 @@
   (| 42 {"a" (& . (+ . 1))}))
 
 (deft t41 "\"b\" | @base64 \"a\\(.)c\""
-  (| "b" (cq/str "a" (cq/jq-format :base64) "c")))
+  (| "b" (cq/str "a" (jq/format :base64) "c")))
 
 (deft t40 "[1,2],[\"h\",\"i\"],[[3,4],[5,6]] | .[0]+.[1]"
   (| (& [1 2]
         ["h" "i"]
         [[3 4] [5 6]])
-     (cq/jq-+ (get 0) (get 1))))
+     (jq/+ (get 0) (get 1))))
 
 (deft t39 "1 + 2 + 4 + 8 * 16 * 32 - 64 - 128"
   (- (+ 1 2 4 (* 8 16 32)) 64 128))
