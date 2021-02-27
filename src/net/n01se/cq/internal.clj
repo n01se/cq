@@ -137,7 +137,7 @@
 (defprotocol INavigation
   (navigate [_] "return value by applying navigation")
   (chart [_] "return description of navigation")
-  (modify* [_ base f]))
+  (modify* [_ base f] "rebase nav onto base and update the new target with f"))
 
 (def DefaultINavigation
   {:navigate identity
@@ -147,39 +147,48 @@
 (extend nil     INavigation DefaultINavigation)
 (extend Object  INavigation DefaultINavigation)
 
-(defn nav-get [parent idx]
+(defprotocol ILens
+  (lens-get [_ obj] "get me from obj")
+  (lens-put [_ obj newval] "replace me with newval in obj")
+  (lens-chart [_] "describe me as a path elem"))
+
+(defn nav-lens [parent lens]
   (reify
-    Object (toString [_] (str "nav-get " (pr-str idx) " on " parent))
     INavigation
-    (navigate [_] (get (navigate parent) idx))
-    (chart [_] (conj (chart parent) idx))
+    (navigate [_] (lens-get lens (navigate parent)))
+    (chart [_] (conj (chart parent) (lens-chart lens)))
     (modify* [_ base f]
-      (modify* parent base #(update % idx f)))))
+      (modify* parent base #(lens-put lens % (f (lens-get lens %)))))))
+
+(defn nav-get [parent idx]
+  (nav-lens parent
+            (reify
+              ILens
+              (lens-get [_ obj] (get obj idx))
+              (lens-put [_ obj newval] (assoc obj idx newval))
+              (lens-chart [_] idx))))
 
 (def-mfc get [mf] [x]
   (let [path-elems (invoke-value mf x)]
     (map #(nav-get x %) path-elems)))
 
 (defn nav-slice [parent start-idx end-idx]
-  (let [my-get (fn [x]
-                 (->> x
-                      (drop start-idx)
-                      (take (- end-idx start-idx))
-                      vec))]
-    (reify
-      Object (toString [_] (str "nav-slice " (pr-str start-idx) "-"
-                                (pr-str end-idx) " on " parent))
-      INavigation
-      (navigate [_] (my-get (navigate parent)))
-      (chart [_] (conj (chart parent) {:start start-idx, :end end-idx}))
-      (modify* [_ base f]
-        (modify* parent base #(let [mid (f (my-get %))]
-                                (assert (sequential? mid)
-                                        (str "modify on slice must return sequential, not "
-                                             (type mid) ": " (pr-str mid)))
-                                (concat (take start-idx %)
-                                        mid
-                                        (drop (max start-idx end-idx) %))))))))
+  (nav-lens parent
+            (reify
+              ILens
+              (lens-get [_ obj]
+                (->> obj
+                     (drop start-idx)
+                     (take (- end-idx start-idx))
+                     vec))
+              (lens-put [_ obj newval]
+                (assert (sequential? newval)
+                        (str "modify on slice must return sequential, not "
+                             (type newval) ": " (pr-str newval)))
+                (concat (take start-idx obj)
+                        newval
+                        (drop (max start-idx end-idx) obj)))
+              (lens-chart [_] {:start start-idx, :end end-idx}))))
 
 (def-mfc slice [start-mf end-mf] [x]
   (map (fn [[start-idx end-idx]]
