@@ -9,4 +9,4 @@
       (let [target-sym (if (true? publish) src-sym (symbol (name publish)))]
         (when (= clj (some-> (get this-ns-map target-sym) .ns))
           (ns-unmap *ns* target-sym))
-        (intern *ns* (with-meta target-sym (meta the-var)) @the-var)))))
+        (intern *ns* (with-meta target-sym (meta the-var)) the-var)))))
