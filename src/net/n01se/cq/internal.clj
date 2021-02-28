@@ -166,7 +166,7 @@
               (lens-put [_ obj newval] (assoc obj idx newval))
               (lens-chart [_] idx))))
 
-(def-mfc get [mf] [x]
+(def-mfc get [mf] [x] ;; uses implicit arg
   (let [path-elems (invoke-value mf x)]
     (map #(nav-get x %) path-elems)))
 
@@ -188,14 +188,14 @@
                         (drop (max start-idx end-idx) obj)))
               (lens-chart [_] {:start start-idx, :end end-idx}))))
 
-(def-mfc slice [start-mf end-mf] [x]
+(def-mfc slice [start-mf end-mf] [x] ;; uses implicit arg
   (map (fn [[start-idx end-idx]]
          (nav-slice x start-idx end-idx))
        (cartesian-product-rev [(cq-eval x start-mf)
                                (cq-eval x end-mf)])))
 
 ;; TODO clearly document first-behavior of value-mf
-(def-mfc modify [path-mf value-mf] [x]
+(def-mfc modify [path-mf value-mf] [x] ;; uses implicit arg
   (let [xval (navigate x)]
     (list
      (reduce
@@ -205,7 +205,7 @@
       xval
       (invoke path-mf xval)))))
 
-(def-mfc assign [nav-mf value-mf] [x]
+(def-mfc assign [nav-mf value-mf] [x] ;; uses implicit arg
   (let [xval (navigate x)
         navs (invoke nav-mf xval)
         values (cq-eval xval value-mf)]
@@ -281,7 +281,7 @@
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; Its mplus would be apply concat
 
-(defn mk-all [getter]
+(defn mk-all [getter] ;; uses implicit arg
   (mfn mfn-all {:sym 'all} [x]
        (let [coll (navigate x)]
          (ex-assert (coll? coll)
