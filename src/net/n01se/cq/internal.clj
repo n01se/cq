@@ -232,6 +232,12 @@
 
 (declare &)
 
+(defn ^:publish lift [f & [{:keys [sym]}]]
+  (fn lifted [& mfs]
+    (mfn mfn-lift {:mfc-expr (cons sym mfs)} [x]
+         (map #(apply f %)
+              (cartesian-product (map #(invoke-value % x) mfs))))))
+
 ;; invoke lifts Clojure constants into monadic functions
 (defn invoke [mf x]
   (cond
@@ -239,16 +245,15 @@
     (string? mf) (list mf)
     (boolean? mf) (list mf)
     (keyword? mf) (list mf)
-    (vector? mf) (list (vec (invoke-value (apply & mf) x)))
-    (map? mf) (->> (apply concat mf)
-                   (map #(invoke-value % x))
-                   cartesian-product
-                   (map #(apply array-map %)))
+    (vector? mf) ((apply (lift vector {:sym 'vector}) mf) x)
+    (map? mf) ((apply (lift array-map {:sym 'array-map}) (apply concat mf)) x)
     (fn? mf) (mf x)
     (var? mf) (mf x)
     (nil? mf) (list nil) ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
+(def-mfc collect-into [target-mf src-mf] [x]
+  (map #(into % (cq-eval x src-mf)) (cq-eval x target-mf)))
 
 ;;=== cq library of monadic functions and their constructors
 
@@ -338,12 +343,6 @@
     (list
      (let [deep-value (navigate (first (invoke mf x)))]
        (assoc-in (get-root x) (chart x) deep-value)))))
-
-(defn ^:publish lift [f & [{:keys [sym]}]]
-  (fn lifted [& mfs]
-    (mfn mfn-lift {:mfc-expr (cons sym mfs)} [x]
-         (map #(apply f %)
-              (cartesian-product (map #(invoke-value % x) mfs))))))
 
 ;; Fully-short-circuiting `and` -- perhaps put in jq-compatibility namespace?
 #_

@@ -42,7 +42,7 @@
     :statements (compile (last args))
     :number (read-string (first args))
     :vector (if-let [v (first args)]
-              [(compile v)]
+              `(cq/collect-into [] ~(compile v))
               [])
 
     :str    `(cq/str ~@(map compile args))

@@ -17,8 +17,8 @@
                                                   "Out of bounds negative array index")
                                    nil)
                         (vector? v) (if (neg? i)
-                                      (v (+ (count v) i))
-                                      (v i))
+                                      (get v (+ (count v) i))
+                                      (get v i))
                         (associative? v) (v i)
                         :else (throw (Exception.
                                       (str "Illegal lookup on " (type v)))))))
@@ -46,10 +46,13 @@
                       (string? obj) (subs obj
                                           (max start-idx 0)
                                           (min end-idx (count obj)))
-                      (vector? obj) (subvec obj
-                                            (min (max start-idx 0) (count obj))
-                                            (min end-idx (count obj)))
-                      :else (cqi/ex-assert false "Bad object type for slice")))
+                      (sequential? obj) (->> obj
+                                             (drop start-idx)
+                                             (take (- end-idx start-idx))
+                                             vec)
+                      :else (cqi/ex-assert
+                             false
+                             (str "Bad object type for slice: " (type obj)))))
                   (lens-put [_ obj newval]
                     (cqi/ex-assert (sequential? newval)
                                    (str "modify on slice must return sequential, not "
