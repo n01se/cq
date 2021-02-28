@@ -10,7 +10,7 @@
 
 (def op-symbols
   {","  `cq/&
-   "+"  `jq/+
+   "+"  `jq/jq-+
    "-"  `cq/-
    "*"  `cq/*
    "/"  `cq//
@@ -47,7 +47,7 @@
 
     :str    `(cq/str ~@(map compile args))
     :istr   (read-string (str \" (first args) \"))
-    :format `(jq/format ~(keyword (first args)))
+    :format `(jq/jq-format ~(keyword (first args)))
     :format-interp (let [[format-node [_ & parts]] args]
                      `(cq/str ~@(map (fn [[snode :as expr]]
                                           (if (= :istr snode)
@@ -68,6 +68,8 @@
                           `(cq/first ~@args))
                 "path" `(cq/path ~@args)
                 "select" `(cq/select ~@args)
+                "range" `(jq/jq-range ~@args)
+                "while" `(jq/jq-while ~@args)
                 "tojson" `(jq/tojson .)
                 "fromjson" `(jq/fromjson .)
                 ;; Maybe, hopefully, a local?
@@ -110,7 +112,7 @@
                   `(cq/| ~(compile left) ~right)
                   right))
           "$" (symbol (str "$" (-> args second second)))
-          "?" `(jq/try ~(compile (first args)))
+          "?" `(jq/jq-try ~(compile (first args)))
           ".." `jq/jq-tree-seq
           "|" (let [parts (take-nth 2 (partition-by (partial = "|") args))
                     runs (reverse (partition-by second (drop-last parts)))]
@@ -142,6 +144,7 @@
                                   [kc `(jq/jq-get ~kc)])))
                             (rest args)))
           "if" `(cq/if ~@(map compile (rest args)))
+          "try" `(jq/try ~@(map compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))
 

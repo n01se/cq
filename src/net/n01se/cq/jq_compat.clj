@@ -1,5 +1,4 @@
 (ns net.n01se.cq.jq-compat
-  (:refer-clojure :exclude [+ format try])
   (:require [cheshire.core :as json]
             [clojure.core :as clj]
             [clojure.string :as str]
@@ -11,13 +10,25 @@
                 (reify
                   cqi/ILens
                   (lens-get [_ v]
-                    (cond
-                      (nil? v) nil
-                      (seq? v) (nth v i)
-                      (associative? v) (v i)
-                      :else (throw (Exception.
-                                    (str "Illegal lookup on " (type v))))))
-                  (lens-put [_ obj newval] (assoc obj i newval))
+                    (let [v (if (seq? v) (vec v) v)]
+                      (cond
+                        (nil? v) (if (number? i)
+                                   (cqi/ex-assert (<= 0 i)
+                                                  "Out of bounds negative array index")
+                                   nil)
+                        (vector? v) (if (neg? i)
+                                      (v (+ (count v) i))
+                                      (v i))
+                        (associative? v) (v i)
+                        :else (throw (Exception.
+                                      (str "Illegal lookup on " (type v)))))))
+                  (lens-put [_ v newval]
+                    (let [v (if (seq? v) (vec v) v)]
+                      (cond
+                        (vector? v) (if (neg? i)
+                                      (assoc v (+ (count v) i) newval)
+                                      (assoc v i newval))
+                        :else (assoc v i newval))))
                   (lens-chart [_] i))))
 
 (defn jq-get [mf]
@@ -58,7 +69,7 @@
 (def ^:publish all ;; TODO: rename to `each`?
   (cqi/mk-all nav-get))
 
-(def +
+(def jq-+
   (cqi/lift
    #(cond
       (every? number? %&) (apply clj/+ %&)
@@ -76,7 +87,7 @@
     (str/replace x "\t" "\\t")
     (str x)))
 
-(defn format [ftype]
+(defn jq-format [ftype]
   (mfn mfn-format {:mfc-expr `(format ~ftype)} [x]
        (list
         (case ftype
@@ -103,10 +114,13 @@
 (def tojson (cqi/lift json/generate-string {:sym `tojson}))
 (def fromjson (cqi/lift json/parse-string {:sym `fromjson}))
 
-(defn try [expr]
+(defn jq-try [expr & [catch-expr]]
   (mfn mfn-try {:mf-expr (list `try expr)} [x]
        (try (doall (cqi/invoke-value expr x))
-            (catch Exception ex ()))))
+            (catch Exception ex
+              (if catch-expr
+                (cqi/invoke catch-expr (.getMessage ex))
+                ())))))
 
 (def jq-tree-seq
   (mfn mfn-tree-seq {:mf-expr `tree-seq} [x]
@@ -114,3 +128,13 @@
        (tree-seq coll?
                  #(if (map? %) (vals %) (seq %))
                  x)))
+
+(defn jq-range [& args]
+  (mfn mfn-jq-range {:mf-expr `(jq-range ~@args)} [x]
+       (->> (cqi/cartesian-product-rev (map #(cqi/invoke-value % x) args))
+            (mapcat #(apply range %)))))
+
+(defn jq-while [cont? iter]
+  (mfn mfn-jq-while {:mf-expr `(jq-while ~cont? ~iter)} [x]
+       (take-while #(cqi/cq-eval1 % cont?)
+                   (iterate #(cqi/cq-eval1 % iter) x))))

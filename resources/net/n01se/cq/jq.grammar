@@ -12,7 +12,8 @@ param = <ws>? "$"? ident
 
 as = <ws> <"as"> <ws> "$" ident
 
-exp00 = <ws>? "if" <ws>? exp05 <ws> <"then"> exp05 <ws> <"else"> exp05 <ws> <"end"> |
+exp00 = <ws>? "if" exp05 <ws> <"then"> exp05 <ws> <"else"> exp05 <ws> <"end"> |
+        <ws>? "try" exp05 <ws>? <"catch"> exp00 |
         exp05
 exp05 = exp10 (as? <ws>? "|" exp10)*
 exp10 = exp20 (<ws>? "," exp20)*
