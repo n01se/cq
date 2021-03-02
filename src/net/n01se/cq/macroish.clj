@@ -51,10 +51,10 @@
 
 (comment
 
-  (go* '(| [1 2 3]
-           (my-first (| all (inc .)))))
+  (go* '(| (& [1 2 3] [4 (+ 10 (& 5 100)) 6] [7 8 9])
+         (cqi/navigate (cqi/nav-get . (& 1 2)))))
 
-  (go (| (& [1 2 3] [4 5 6] [7 8 9])
-         (cqi/nav-get . (& 1 2))))
+  (go (| (& [1 2 3] [4 (+ 10 (& 5 100)) 6] [7 8 9])
+         (cqi/navigate (cqi/nav-get . (& 1 2)))))
 
   :end)

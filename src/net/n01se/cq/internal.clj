@@ -159,43 +159,45 @@
       (modify* parent base #(lens-put lens % (f (lens-get lens %)))))))
 
 (defn nav-get [parent idx]
-  (nav-lens parent
-            (reify
-              ILens
-              (lens-get [_ obj] (get obj idx))
-              (lens-put [_ obj newval] (assoc obj idx newval))
-              (lens-chart [_] idx))))
-
-(def-mfc get [mf] [x] ;; uses implicit arg
-  (let [path-elems (invoke-value mf x)]
-    (map #(nav-get x %) path-elems)))
+  (let [idx (navigate idx)]
+    (nav-lens parent
+              (reify
+                ILens
+                (lens-get [_ obj] (get obj idx))
+                (lens-put [_ obj newval] (assoc obj idx newval))
+                (lens-chart [_] idx)))))
 
 (defn nav-slice [parent start-idx end-idx]
-  (nav-lens parent
-            (reify
-              ILens
-              (lens-get [_ obj]
-                (->> obj
-                     (drop start-idx)
-                     (take (- end-idx start-idx))
-                     vec))
-              (lens-put [_ obj newval]
-                (ex-assert (sequential? newval)
-                           (str "modify on slice must return sequential, not "
-                                (type newval) ": " (pr-str newval)))
-                (concat (take start-idx obj)
-                        newval
-                        (drop (max start-idx end-idx) obj)))
-              (lens-chart [_] {:start start-idx, :end end-idx}))))
+  (let [start-idx (navigate start-idx)
+        end-idx (navigate end-idx)]
+    (nav-lens parent
+              (reify
+                ILens
+                (lens-get [_ obj]
+                  (->> obj
+                       (drop start-idx)
+                       (take (- end-idx start-idx))
+                       vec))
+                (lens-put [_ obj newval]
+                  (ex-assert (sequential? newval)
+                             (str "modify on slice must return sequential, not "
+                                  (type newval) ": " (pr-str newval)))
+                  (concat (take start-idx obj)
+                          newval
+                          (drop (max start-idx end-idx) obj)))
+                (lens-chart [_] {:start start-idx, :end end-idx})))))
 
-(def-mfc slice [start-mf end-mf] [x] ;; uses implicit arg
-  (map (fn [[start-idx end-idx]]
-         (nav-slice x start-idx end-idx))
-       (cartesian-product-rev [(cq-eval x start-mf)
-                               (cq-eval x end-mf)])))
+(defn ^:publish lift-nav-aware [f & [{:keys [sym]}]]
+  (fn nav-lifted [& mfs]
+    (mfn mfn-nav-lift {:mfc-expr (cons sym mfs)} [x]
+         (map #(apply f %)
+              (cartesian-product (map #(invoke % x) mfs))))))
+
+(def ^{:publish 'get} cq-get (lift-nav-aware nav-get))
+(def ^:publish slice (lift-nav-aware nav-slice))
 
 ;; TODO clearly document first-behavior of value-mf
-(def-mfc modify [path-mf value-mf] [x] ;; uses implicit arg
+(def-mfc modify [path-mf value-mf] [x]
   (let [xval (navigate x)]
     (list
      (reduce
@@ -205,7 +207,7 @@
       xval
       (invoke path-mf xval)))))
 
-(def-mfc assign [nav-mf value-mf] [x] ;; uses implicit arg
+(def-mfc assign [nav-mf value-mf] [x]
   (let [xval (navigate x)
         navs (invoke nav-mf xval)
         values (cq-eval xval value-mf)]
@@ -281,16 +283,18 @@
 ;; The list monad is additive, so it also supplies an mzero and mplus
 ;; Its mplus would be apply concat
 
-(defn mk-all [getter] ;; uses implicit arg
-  (mfn mfn-all {:sym 'all} [x]
-       (let [coll (navigate x)]
-         (ex-assert (coll? coll)
-                    (str "`all` requires a seqable collection, not "
-                         (type coll) ": " (pr-str coll)))
-         (map-indexed (fn [i _] (getter x i)) coll))))
+(defn mk-each [getter]
+  (fn [mf]
+    (mfn mfn-all {:mf-expr `(each ~getter)} [x]
+         (mapcat (fn [coll]
+                   (ex-assert (coll? coll)
+                              (str "`all` requires a seqable collection, not "
+                                   (type coll) ": " (pr-str coll)))
+                   (map-indexed (fn [i _] (getter coll i)) coll))
+                 (cq-eval x mf)))))
 
-(def ^:publish all ;; TODO: rename to `each`?
-  (mk-all nav-get))
+(def ^:publish each
+  (mk-each nav-get))
 
 (def-mfc path [mf] [x]
   (map chart (invoke mf (navigate x))))

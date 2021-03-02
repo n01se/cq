@@ -2,75 +2,70 @@
   (:require [cheshire.core :as json]
             [clojure.core :as clj]
             [clojure.string :as str]
-            [net.n01se.cq.internal :as cqi :refer [mfn]]))
+            [net.n01se.cq.internal :as cqi :refer [mfn]]
+            [net.n01se.cq :as cq]))
 
 ;; jq-compatible get. ew.
 (defn nav-get [parent i]
-  (cqi/nav-lens parent
-                (reify
-                  cqi/ILens
-                  (lens-get [_ v]
-                    (let [v (if (seq? v) (vec v) v)]
-                      (cond
-                        (nil? v) (if (number? i)
-                                   (cqi/ex-assert (<= 0 i)
-                                                  "Out of bounds negative array index")
-                                   nil)
-                        (vector? v) (if (neg? i)
-                                      (get v (+ (count v) i))
-                                      (get v i))
-                        (associative? v) (v i)
-                        :else (throw (Exception.
-                                      (str "Illegal lookup on " (type v)))))))
-                  (lens-put [_ v newval]
-                    (let [v (if (seq? v) (vec v) v)]
-                      (cond
-                        (vector? v) (if (neg? i)
-                                      (assoc v (+ (count v) i) newval)
-                                      (assoc v i newval))
-                        :else (assoc v i newval))))
-                  (lens-chart [_] i))))
-
-(defn jq-get [mf]
-  (mfn mfn-get {:mfc-expr `(jq-get ~mf)} [x]
-   (let [path-elems (cqi/invoke-value mf x)]
-     (map #(nav-get x %) path-elems))))
+  (let [i (cqi/navigate i)]
+    (cqi/nav-lens parent
+                  (reify
+                    cqi/ILens
+                    (lens-get [_ v]
+                      (let [v (if (seq? v) (vec v) v)]
+                        (cond
+                          (nil? v) (if (number? i)
+                                     (cqi/ex-assert (<= 0 i)
+                                                    "Out of bounds negative array index")
+                                     nil)
+                          (vector? v) (if (neg? i)
+                                        (get v (+ (count v) i))
+                                        (get v i))
+                          (associative? v) (v i)
+                          :else (throw (Exception.
+                                        (str "Illegal lookup on " (type v)))))))
+                    (lens-put [_ v newval]
+                      (let [v (if (seq? v) (vec v) v)]
+                        (cond
+                          (vector? v) (if (neg? i)
+                                        (assoc v (+ (count v) i) newval)
+                                        (assoc v i newval))
+                          :else (assoc v i newval))))
+                    (lens-chart [_] i)))))
 
 (defn nav-slice [parent start-idx end-idx]
-  (cqi/nav-lens parent
-                (reify
-                  cqi/ILens
-                  (lens-get [_ obj]
-                    (cond
-                      (nil? obj) nil
-                      (string? obj) (subs obj
-                                          (max start-idx 0)
-                                          (min end-idx (count obj)))
-                      (sequential? obj) (->> obj
-                                             (drop start-idx)
-                                             (take (- end-idx start-idx))
-                                             vec)
-                      :else (cqi/ex-assert
-                             false
-                             (str "Bad object type for slice: " (type obj)))))
-                  (lens-put [_ obj newval]
-                    (cqi/ex-assert (sequential? newval)
-                                   (str "modify on slice must return sequential, not "
-                                        (type newval) ": " (pr-str newval)))
-                    (concat (take start-idx obj)
-                            newval
-                            (drop (max start-idx end-idx) obj)))
-                  (lens-chart [_] {:start start-idx, :end end-idx}))))
+  (let [start-idx (cqi/navigate start-idx)
+        end-idx (cqi/navigate end-idx)]
+    (cqi/nav-lens parent
+                  (reify
+                    cqi/ILens
+                    (lens-get [_ obj]
+                      (cond
+                        (nil? obj) nil
+                        (string? obj) (subs obj
+                                            (max start-idx 0)
+                                            (min end-idx (count obj)))
+                        (sequential? obj) (->> obj
+                                               (drop start-idx)
+                                               (take (- end-idx start-idx))
+                                               vec)
+                        :else (cqi/ex-assert
+                               false
+                               (str "Bad object type for slice: " (type obj)))))
+                    (lens-put [_ obj newval]
+                      (cqi/ex-assert (sequential? newval)
+                                     (str "modify on slice must return sequential, not "
+                                          (type newval) ": " (pr-str newval)))
+                      (concat (take start-idx obj)
+                              newval
+                              (drop (max start-idx end-idx) obj)))
+                    (lens-chart [_] {:start start-idx, :end end-idx})))))
 
-(defn slice [start-mf end-mf]
-  (mfn mfn-slice {:mfc-expr `(slice ~start-mf ~end-mf)} [x]
-       (map (fn [[start-idx end-idx]]
-              (nav-slice x start-idx end-idx))
-            (cqi/cartesian-product-rev [(cqi/cq-eval x start-mf)
-                                        (cqi/cq-eval x end-mf)]))))
+(def jq-get (cqi/lift-nav-aware nav-get))
+(def slice (cqi/lift-nav-aware nav-slice))
 
-(def ^:publish all ;; TODO: rename to `each`?
-  (cqi/mk-all nav-get))
+(def ^:publish each
+  (cqi/mk-each nav-get))
 
 (def jq-+
   (cqi/lift
@@ -127,7 +122,6 @@
 
 (def jq-tree-seq
   (mfn mfn-tree-seq {:mf-expr `tree-seq} [x]
-       (prn :x x)
        (tree-seq coll?
                  #(if (map? %) (vals %) (seq %))
                  x)))

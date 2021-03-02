@@ -64,7 +64,7 @@
                 "null" nil
                 "empty" `(cq/&)
                 "first" (if (empty? args)
-                          `(jq/jq-get 0)
+                          `(jq/jq-get . 0)
                           `(cq/first ~@args))
                 "path" `(cq/path ~@args)
                 "select" `(cq/select ~@args)
@@ -104,9 +104,9 @@
                                            (cons nil args)
                                            args)
                     right (if lnode
-                            `(jq/jq-get ~(if (= :ident ltype)
-                                           (second lnode)
-                                           (compile lnode)))
+                            `(jq/jq-get . ~(if (= :ident ltype)
+                                             (second lnode)
+                                             (compile lnode)))
                             `cq/.)]
                 (if left
                   `(cq/| ~(compile left) ~right)
@@ -133,18 +133,18 @@
                         runs))
           "[" (let [[a b c :as vs] (map compile (remove string? args))]
                 (case (count vs)
-                  1 `(cq/| ~a jq/all) ;; all .[]
-                  2 `(cq/| ~a (jq/jq-get ~b))  ;; navigate
-                  3 `(cq/| ~a (jq/slice ~b ~c)))) ;; slice
+                  1 `(jq/each ~a) ;; all .[]
+                  2 `(jq/jq-get ~a ~b)  ;; navigate
+                  3 `(jq/slice ~a ~b ~c))) ;; slice
           "{" (into {} (map (fn [[_ [knode :as k] v]]
                               (let [kc (compile k)
                                     kc (if (symbol? kc) (str kc) kc)]
                                 (if v
                                   [kc (compile v)]
-                                  [kc `(jq/jq-get ~kc)])))
+                                  [kc `(jq/jq-get . ~kc)])))
                             (rest args)))
           "if" `(cq/if ~@(map compile (rest args)))
-          "try" `(jq/try ~@(map compile (rest args)))
+          "try" `(jq/jq-try ~@(map compile (rest args)))
           (throw (ex-info (str "unknown-node " (pr-str (cons node args)))
                           {:entry (cons node args)})))))))
 
