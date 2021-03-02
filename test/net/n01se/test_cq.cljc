@@ -25,33 +25,31 @@
       (throw (Exception. err)))
     (parse-jq-out out)))
 
-(defn check-jq [cq jqs & [input]]
-  (if-not (string? jqs)
-    true
-    (let [jq-out (jq jqs input)]
-      (when-not (clj/= cq jq-out)
-        (prn :expected jq-out :got cq))
-      (clj/= cq jq-out))))
+(defn check-jq [cq-result jq-str & [input]]
+  (if-not (string? jq-str)
+    false
+    (let [jq-result (jq jq-str input)]
+      (when-not (clj/= cq-result jq-result)
+        (prn :expected jq-result :got cq-result))
+      (clj/= cq-result jq-result))))
 
-(defmacro deft [n jq expr]
-  `(def ~(vary-meta n assoc
-                    :jq jq
-                    :test `(fn []
-                             (let [cq# (cq/eval (cq/with-refer-all [~'cq] ~expr))]
-                               (assert (check-jq cq# ~jq))
-                               cq#)))
-     (fn [] ((:test (meta (var ~n)))))))
+(def tests {})
 
-(defn test-here []
-  (dorun (map #(%) (keep (comp :test meta val) (ns-publics *ns*))))
-  :ok)
+(defn test-cq [test-key]
+  (let [{:keys [jq cq]} (get tests test-key)
+        cq-result (eval `(cq/with-refer-all [net.n01se.cq] (cq/eval ~cq)))]
+    (assert (check-jq cq-result jq))
+    cq-result))
 
-(defn test-compiler []
-  (doseq [[_ v] (ns-publics *ns*)]
-    (when-let [jq (-> v meta :jq)]
-      (let [cq-mfn (jqc/compile-str jq)]
-        (when-not (check-jq (cq/eval cq-mfn) jq)
-          (println "check failed: " jq)))))
+(defn test-jqc [test-key]
+  (let [{:keys [jq cq]} (get tests test-key)
+        cq-result (cq/eval (jqc/compile-str jq))]
+    (assert (check-jq cq-result jq))
+    cq-result))
+
+(defn test-all [tester]
+  (doseq [[test-key {:keys [jq cq]}] tests]
+    (tester test-key))
   :ok)
 
 (defn jq-unit-tests []
@@ -63,6 +61,13 @@
         (let [cq-mfn (-> jq jqc/compile-str)]
           (assert (check-jq (cq/eval (json/parse-string input) cq-mfn)
                             jq input)))))))
+
+
+(defmacro deft [n jq cq-form]
+  (let [k (keyword (name n))]
+    `(do
+       (alter-var-root #'tests assoc ~k {:jq ~jq :cq '~cq-form})
+       (defn ~n [] (test-cq ~k)))))
 
 ;; EXPERIMENTAL dynamically rooted paths
 
@@ -217,13 +222,13 @@
 (deft t29 "5 as $a | $a"
   (let [$a 5] $a))
 
-(let [f (fn [p]
-          (cq/with-refer-all [cq]
-            (& (path p)
-               (modify p (+ . 1)))))]
-  (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
-    (| [[5]]
-       (f (-> . (get 0) (get 0))))))
+(defn path-and-modify [p]
+  (cq/with-refer-all [cq]
+    (& (path p)
+       (modify p (+ . 1)))))
+(deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
+  (| [[5]]
+     (path-and-modify (-> . (get 0) (get 0)))))
 
 (deft t27 "[[7],[8],[9]] | .[] |= ( .[] |= .+1 )"
   (| [[7] [8] [9]]
