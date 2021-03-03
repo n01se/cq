@@ -286,12 +286,13 @@
 (defn mk-each [getter]
   (fn [mf]
     (mfn mfn-all {:mf-expr `(each ~getter)} [x]
-         (mapcat (fn [coll]
-                   (ex-assert (coll? coll)
-                              (str "`all` requires a seqable collection, not "
-                                   (type coll) ": " (pr-str coll)))
-                   (map-indexed (fn [i _] (getter coll i)) coll))
-                 (cq-eval x mf)))))
+         (mapcat (fn [coll-nav]
+                   (let [coll (navigate coll-nav)]
+                     (ex-assert (coll? coll)
+                                (str "`each` requires a seqable collection, not "
+                                     (type coll) ": " (pr-str coll)))
+                     (map-indexed (fn [i _] (getter coll-nav i)) coll)))
+                 (invoke mf x)))))
 
 (def ^:publish each
   (mk-each nav-get))
