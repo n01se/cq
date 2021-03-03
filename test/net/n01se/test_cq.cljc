@@ -25,12 +25,12 @@
       (throw (Exception. err)))
     (parse-jq-out out)))
 
-(defn check-jq [cq-result jq-str & [input]]
+(defn check-jq [k cq-result jq-str & [input]]
   (if-not (string? jq-str)
     false
     (let [jq-result (jq jq-str input)]
       (when-not (clj/= cq-result jq-result)
-        (prn :expected jq-result :got cq-result))
+        (prn :test k :jq jq-result :cq cq-result))
       (clj/= cq-result jq-result))))
 
 (def tests {})
@@ -38,17 +38,18 @@
 (defn test-cq [test-key]
   (let [{:keys [jq cq]} (get tests test-key)
         cq-result (eval `(cq/with-refer-all [net.n01se.cq] (cq/eval ~cq)))]
-    (assert (check-jq cq-result jq))
+    (assert (check-jq test-key cq-result jq))
     cq-result))
 
 (defn test-jqc [test-key]
   (let [{:keys [jq cq]} (get tests test-key)
         cq-result (cq/eval (jqc/compile-str jq))]
-    (assert (check-jq cq-result jq))
+    (assert (check-jq test-key cq-result jq))
     cq-result))
 
 (defn test-all [tester]
   (doseq [[test-key {:keys [jq cq]}] tests]
+    (prn test-key)
     (tester test-key))
   :ok)
 
@@ -109,6 +110,31 @@
 ;; .   .
 ;; =   assign
 ;; |=  modify
+
+
+;; select(foo)  if foo then . else empty end           (if foo .)
+;; select(rtn,foo)  if foo then rtn else empty end     (if foo rtn)
+;; select(rtn,foo,...)  if foo then rtn else ... end   (if foo rtn ...)
+
+(deft t65
+  #_"[1,-3,4,6,-1,0,-2] | [.[] | select(.>0) |= .*2]"
+  #_"[1,-3,4,6,-1,0,-2] | [.[] | if . > 0 then . * 2 else . end]"
+  #_"[1,-3,4,6,-1,0,-2] | (.[] | select(.>0)) |= .*2"
+  "[1,-3,4,6,-1,0,-2] | (.[] | if .>0 then . else empty end) |= .*2"
+  (| [1,-3,4,6,-1,0,-2]
+     (modify (| (each .) (select . (> . 0)))
+             (* . 2)))
+  #_
+  (| [1,-3,4,6,-1,0,-2]
+     (modify (| (each .) (select . (> . 0)))
+             (* . 2))))
+
+
+(deft t64 "[1,2,3,4][] | [., .*2, .+10] | select(.[0]<3, 1<.[0])[1:9][]"
+  (| [1 2 3 4]
+     (each .)
+     (select (& (* . 2) (+ . 10))
+             (& (< . 3) (< 1 .)))))
 
 (deft t63 "[4,[3,2,1,0]][1][1:3][]"
   (-> [4 [3 2 1 0]]
@@ -183,18 +209,17 @@
 
 (deft t37 "[3,-2,5,1,-3] | .[] | select(. > 0) |= .*2"
   #_(& 6 -2 10 2 -3)
-  (| [3 -2 5 1 -3]
-     (each .)
-     (modify (select (> . 0))
-             (* . 2))))
+  (| (-> [3 -2 5 1 -3]
+         each)
+     (modify (select . (> . 0)) (* . 2))))
 
 (deft t36  "1,2,3 | select((.*2,.) != 2)"
   (| (& 1 2 3)
-     (select (not= (& (* . 2) .) 2))))
+     (select . (not= (& (* . 2) .) 2))))
 
 (deft t35  "1,2,3 | select(. != 2)"
   (| (& 1 2 3)
-     (select (not= . 2))))
+     (select . (not= . 2))))
 
 (deft t34 "1,2,3,4,3,2,1 | (if . == 2 then empty else . end)"
   (| (& 1 2 3 4 3 2 1)
@@ -257,25 +282,27 @@
 
 (deft t24 "[1,2,3] | (.[0,1]) |= .*2"
   (| [1 2 3]
-     (modify (get . (& 0 1))
-             (* . 2))))
+     (-> .
+         (get (& 0 1))
+         (modify (* . 2)))))
 
 (deft t23 "[4,5,6] | .[0,1]"
   (| [4 5 6] (get . (& 0 1))))
 
 (deft t22 "path(.[0] | .[1] | .[2])"
-  (path (-> .
-            (get 0)
-            (get 1)
-            (get 2))))
+  (-> .
+      (get 0)
+      (get 1)
+      (get 2)
+      path))
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
   (| [0 [[1]]]
-     (modify (-> .
-                 (get 1)
-                 (get 0)
-                 (get 0))
-            (+ . 5))))
+     (-> .
+         (get 1)
+         (get 0)
+         (get 0)
+         (modify (+ . 5)))))
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
   (| 5

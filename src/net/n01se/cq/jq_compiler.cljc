@@ -67,7 +67,7 @@
                           `(jq/jq-get . 0)
                           `(cq/first ~@args))
                 "path" `(cq/path ~@args)
-                "select" `(cq/select ~@args)
+                "select" `(cq/select cq/. ~@args)
                 "range" `(jq/jq-range ~@args)
                 "while" `(jq/jq-while ~@args)
                 "tojson" `(jq/tojson .)

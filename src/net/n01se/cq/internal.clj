@@ -330,9 +330,10 @@
                         fn-vec)]
           (invoke ~mf x#))))
 
-(def-mfc select [mf] [x]
-  (mapcat #(when % (list x))
-          (invoke-value mf x)))
+(def-mfc select [value-mf test-mf] [x]
+  (let [value-nav-stream (invoke value-mf x)]
+    (mapcat #(when % value-nav-stream)
+            (invoke-value test-mf x))))
 
 ;; EXPERIMENTAL dynamically rooted paths
 (comment
