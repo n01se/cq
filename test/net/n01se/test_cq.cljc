@@ -78,31 +78,31 @@
     #_"def f(p): [p] | path(.[]),(.[] |= .+1); [2,4] | f(.[0,1])"  ;; or this? [0] [1] [3 5]
     (| [2 4]
        rooted
-       (get . (& 0 1))
+       (pick . (& 0 1))
        (& rooted-path
           (rooted-reset (+ . 1)))))
 
   (deft tx2 "def f(p): path(p),p |= .+1; [[1]],[[5]] | .[0] | f(.[0])"
     (| (& [[1]] [[5]])
-       (get . 0)
+       (pick . 0)
        rooted
-       (get . 0)
+       (pick . 0)
        (& rooted-path
           (rooted-reset (+ . 1)))))
 
   (deft tx1 "def f(p): path(p),p |= .+1; [[1]],[[5]] | f(.[0] | .[0])"
     (| (& [[1]] [[5]])
        rooted
-       (get . 0)
-       (get . 0)
+       (pick . 0)
+       (pick . 0)
        (& rooted-path
           (rooted-reset (+ . 1)))))
 
   (deft tx0 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
     (| [[5]]
        rooted
-       (get . 0)
-       (get . 0)
+       (pick . 0)
+       (pick . 0)
        (& rooted-path
           (rooted-reset (+ . 1))))))
 
@@ -138,7 +138,7 @@
 
 (deft t63 "[4,[3,2,1,0]][1][1:3][]"
   (-> [4 [3 2 1 0]]
-      (get 1)
+      (pick 1)
       (slice 1 3)
       each))
 
@@ -175,18 +175,18 @@
 
 (deft t45 "{a:9} | {a, (\"c\",\"d\"):10} | .a,.d"
   (| {:a 9}
-     {:a (get . :a), (& :c :d) 10}
-     (get . (& :a :d))))
+     {:a (pick . :a), (& :c :d) 10}
+     (pick . (& :a :d))))
 
 (deft t44 "{a:1, b:2, c:3, d:\"c\"} | {a,b,(.d):.a,e:(.b,\"x\")}"
   (| {"a" 1, "b" 2, "c" 3, "d" "c"}
-     {"a" (get . "a")
-      "b" (get . "b")
-      (get . "d") (get . "a"),
-      "e" (& (get . "b") "x")}))
+     {"a" (pick . "a")
+      "b" (pick . "b")
+      (pick . "d") (pick . "a"),
+      "e" (& (pick . "b") "x")}))
 
 (deft t43 "{a:99} | .a"
-  (| {"a" 99} (get . "a")))
+  (| {"a" 99} (pick . "a")))
 
 (deft t42 "42 | {a:(.,.+1)}"
   (| 42 {"a" (& . (+ . 1))}))
@@ -198,7 +198,7 @@
   (| (& [1 2]
         ["h" "i"]
         [[3 4] [5 6]])
-     (jq/jq-+ (get . 0) (get . 1))))
+     (jq/jq-+ (pick . 0) (pick . 1))))
 
 (deft t39 "1 + 2 + 4 + 8 * 16 * 32 - 64 - 128"
   (- (+ 1 2 4 (* 8 16 32)) 64 128))
@@ -229,7 +229,7 @@
   (letfn [(addvalue [f] (let [$x f]
                           (| (each .) [(concat . $x)])))]
     (| [[1,2],[10,20]]
-       (addvalue (get . 0)))))
+       (addvalue (pick . 0)))))
 
 (deft t32 "def foo(f): f|f; 5|foo(.*2)"
   (letfn [(foo [f] (| f f))]
@@ -253,7 +253,7 @@
        (modify p (+ . 1)))))
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (| [[5]]
-     (path-and-modify (-> . (get 0) (get 0)))))
+     (path-and-modify (-> . (pick 0) (pick 0)))))
 
 (deft t27c "[[7],[8],[9]][] | .[] |= . + 1"
   (| (each [[7] [8] [9]])
@@ -272,36 +272,36 @@
 
 (deft t26 "[[7],[8],[9]] | (.[] | .[0]) |= .+1"
   (| [[7] [8] [9]]
-     (modify (-> . each (get 0))
+     (modify (-> . each (pick 0))
              (+ . 1))))
 
 (deft t25 "[[7],[8],[9]] | .[] | .[0] |= .+1"
   (| [[7] [8] [9]]
      (each .)
-     (modify (get . 0) (+ . 1))))
+     (modify (pick . 0) (+ . 1))))
 
 (deft t24 "[1,2,3] | (.[0,1]) |= .*2"
   (| [1 2 3]
      (-> .
-         (get (& 0 1))
+         (pick (& 0 1))
          (modify (* . 2)))))
 
 (deft t23 "[4,5,6] | .[0,1]"
-  (| [4 5 6] (get . (& 0 1))))
+  (| [4 5 6] (pick . (& 0 1))))
 
 (deft t22 "path(.[0] | .[1] | .[2])"
   (-> .
-      (get 0)
-      (get 1)
-      (get 2)
+      (pick 0)
+      (pick 1)
+      (pick 2)
       path))
 
 (deft t21 "[0,[[1]]] | .[1][0][0] |= . + 5"
   (| [0 [[1]]]
      (-> .
-         (get 1)
-         (get 0)
-         (get 0)
+         (pick 1)
+         (pick 0)
+         (pick 0)
          (modify (+ . 5)))))
 
 (deft t20 "5 | (1*.,2) - (10*.,20) - (100*.,200)"
@@ -322,11 +322,11 @@
 
 (deft t17 "[1,2,3],[4,5,6],[7,8,9] | .[1,2]"
   (| (& [1 2 3] [4 5 6] [7 8 9])
-     (get . (& 1 2))))
+     (pick . (& 1 2))))
 
 (deft t16 "[1,2,3],[4,5,6],[7,8,9] | .[.[]]"
   (| (& [1 2 3] [4 5 6] [7 8 9])
-     (get . (each .))))
+     (pick . (each .))))
 
 (deft t15 "[1,2,3] | path(.[])"
   (| [1 2 3]
@@ -347,16 +347,16 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (| [1 2 3]
-     (first (| (each .) (inc .)))))
+     (cq/apply-stream take 1 (| (each .) (inc .)))))
 
 (deft t9 "[1,2,3] | first(.[])"
   (| [1 2 3]
-     (first (each .))))
+     (cq/apply-stream take 1 (each .))))
 
 (deft t8 "[[1],[2],[3]] | .[] | .[0]"
   (| (& [[1] [2] [3]])
      (each .)
-     (get . 0)))
+     (pick . 0)))
 
 (deft t7 "[1,2,3] | .[]"
   (| (& [1 2 3]) (each .)))
@@ -383,7 +383,7 @@
 
 (deft t1 "[1,2,3] | first"
   (| [1 2 3]
-     (get . 0)))
+     (pick . 0)))
 
 (deft t0 "1,2,3 | . + 1"
   (| (& 1 2 3)

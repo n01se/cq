@@ -193,7 +193,7 @@
          (map #(apply f %)
               (cartesian-product (map #(invoke % x) mfs))))))
 
-(def ^{:publish 'get} cq-get (lift-nav-aware nav-get))
+(def ^:publish pick (lift-nav-aware nav-get))
 (def ^:publish slice (lift-nav-aware nav-slice))
 
 ;; TODO clearly document first-behavior of value-mf
