@@ -12,14 +12,19 @@
           [()]
           (reverse colls)))
 
-(defmacro ^:cq/stream-aware | [& args]
-  `(->> ~(first args)
-        ~@(map (fn [arg]
-                 `(mapcat (fn [~'cq-this] ~arg)))
-               (rest args))))
+(defmacro ^:cq/stream-aware ^:cq/nav-aware | ;; pipe
+  ([] '(list cq-this))
+  ([arg] arg)
+  ([arg1 & args]
+   `(->> ~arg1
+         ~@(map (fn [arg]
+                  `(mapcat (fn [~'cq-this] ~arg)))
+                args))))
 
-(defn ^:cq/stream-aware & [& args]
-  (apply concat args))
+(defn ^:cq/stream-aware ^:cq/nav-aware & ;; span
+  ([] ())
+  ([arg] arg)
+  ([arg1 & args] (apply concat arg1 args)))
 
 (comment
   ;; goal: make following | macro work with go macro
@@ -66,26 +71,23 @@
 (defn ^:cq/stream-aware collect-into [targets stream]
   (map #(into % stream) targets))
 
-(defn array-map-combinations [& args]
-  (map #(apply array-map %) (combinations args)))
-
-(defn map-navs [streams]
-  (map #(map cqi/navigate %) streams))
-
 (defn expand-form [form]
   (cond
     (seq? form)
     (let [[op & args] form]
-      (let [{:keys [cq/stream-aware cq/nav-aware]} (meta (ns-resolve *ns* op))]
+      (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))
+            ex-args (mapv expand-form args)
+            nav-args (if nav-aware
+                       ex-args
+                       (mapv (fn [arg-form] `(map cqi/navigate ~arg-form)) ex-args))]
         (if stream-aware
-          `(~op ~@(mapv expand-form args))
+          `(~op ~@nav-args)
           (if-not (next args) ;; make one-arg cases easier to read
-            `(map #(~op (cqi/navigate %)) ~(expand-form (first args)))
-            `(map #(apply ~op %)
-                  (combinations (map-navs [~@(map expand-form args)])))))))
+            `(map ~op ~(first nav-args))
+            `(map #(apply ~op %) (combinations ~nav-args))))))
 
-    (vector? form) `(map vec (combinations (map-navs [~@(map expand-form form)])))
-    (map? form)    `(array-map-combinations ~@(map expand-form (apply concat form)))
+    (vector? form) (expand-form `(vector ~@form))
+    (map? form)    (expand-form `(array-map ~@(apply concat form)))
 
     :else
     (case form
