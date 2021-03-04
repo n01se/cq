@@ -254,6 +254,9 @@
     (nil? mf) (list nil) ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
+(def-mfc collect [src-mf] [x]
+  (list (cq-eval x src-mf)))
+
 (def-mfc collect-into [target-mf src-mf] [x]
   (map #(into % (cq-eval x src-mf)) (cq-eval x target-mf)))
 
@@ -299,9 +302,6 @@
 
 (def-mfc path [mf] [x]
   (map chart (invoke mf (navigate x))))
-
-(def-mfc first [mf] [x]
-  (take 1 (invoke-value mf x)))
 
 (def-mfc if [b t e] [x]
   (mapcat #(invoke (if % t e) x) (invoke-value b x)))
@@ -369,6 +369,7 @@
      (lift ~clj-fn {:sym '~sym})))
 
 (def-lift concat clj/concat)
+(def-lift first clj/first)
 (def-lift inc clj/inc)
 (def-lift + clj/+)
 (def-lift - clj/-)

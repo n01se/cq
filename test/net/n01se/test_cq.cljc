@@ -339,7 +339,7 @@
   (| 1 . .))
 
 (deft t12 "1 | first([.])"
-  (| 1 (first [.])))
+  (| 1 (first (collect [.]))))
 
 (deft t11 "1,2,3 | [4,.]"
   (| (& 1 2 3)
@@ -347,11 +347,11 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (| [1 2 3]
-     (cq/apply-stream take 1 (| (each .) (inc .)))))
+     (first (collect (| (each .) (inc .))))))
 
 (deft t9 "[1,2,3] | first(.[])"
   (| [1 2 3]
-     (cq/apply-stream take 1 (each .))))
+     (first (collect (each .)))))
 
 (deft t8 "[[1],[2],[3]] | .[] | .[0]"
   (| (& [[1] [2] [3]])

@@ -12,13 +12,13 @@
           [()]
           (reverse colls)))
 
-(defmacro ^:cq/list-args | [& args]
+(defmacro ^:cq/stream-aware | [& args]
   `(->> ~(first args)
         ~@(map (fn [arg]
                  `(mapcat (fn [~'cq-this] ~arg)))
                (rest args))))
 
-(defn ^:cq/list-args & [& args]
+(defn ^:cq/stream-aware & [& args]
   (apply concat args))
 
 (comment
@@ -49,43 +49,42 @@
   :end)
 
 ;; same as (cq/apply-stream apply concat .)
-(defn ^:cq/list-args ^:cq/nav each [stream-of-colls]
+(defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
   (mapcat (fn [coll]
             (map-indexed (fn [i _] (cqi/nav-get coll i)) (cqi/navigate coll)))
           stream-of-colls))
 
-(defn ^:cq/nav pick [parent idx]
+(defn ^:cq/nav-aware pick [parent idx]
   (cqi/nav-get parent idx))
 
-(defn ^:cq/list-args apply-stream [fn-stream & args]
-  (let [args (map #(map cqi/navigate %) args)
-        plain-args (drop-last args)
-        last-stream (last args)]
-    (mapcat (fn [[f & zargs]]
-              (apply f (concat zargs [last-stream])))
-            (combinations (cons fn-stream plain-args)))))
+(defn ^:cq/nav-aware path [nav]
+  (cqi/chart nav))
 
-(defn ^:cq/list-args my-first [stream]
-  (take 1 stream))
+(defn ^:cq/stream-aware collect [stream]
+  (list (map cqi/navigate stream)))
 
-(defn ^:cq/list-args collect-into [targets stream]
+(defn ^:cq/stream-aware collect-into [targets stream]
   (map #(into % stream) targets))
 
 (defn array-map-combinations [& args]
   (map #(apply array-map %) (combinations args)))
 
+(defn map-navs [streams]
+  (map #(map cqi/navigate %) streams))
+
 (defn expand-form [form]
   (cond
     (seq? form)
     (let [[op & args] form]
-      (let [{:keys [cq/list-args cq/nav]} (meta (ns-resolve *ns* op))]
-        (if list-args
+      (let [{:keys [cq/stream-aware cq/nav-aware]} (meta (ns-resolve *ns* op))]
+        (if stream-aware
           `(~op ~@(mapv expand-form args))
           (if-not (next args) ;; make one-arg cases easier to read
-            `(map ~op ~(expand-form (first args)))
-            `(map #(apply ~op %) (combinations [~@(map expand-form args)]))))))
+            `(map #(~op (cqi/navigate %)) ~(expand-form (first args)))
+            `(map #(apply ~op %)
+                  (combinations (map-navs [~@(map expand-form args)])))))))
 
-    (vector? form) `(map vec (combinations (map cqi/navigate [~@(map expand-form form)])))
+    (vector? form) `(map vec (combinations (map-navs [~@(map expand-form form)])))
     (map? form)    `(array-map-combinations ~@(map expand-form (apply concat form)))
 
     :else
