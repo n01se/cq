@@ -12,19 +12,87 @@
           [()]
           (reverse colls)))
 
-(defmacro ^:cq/stream-aware ^:cq/nav-aware | ;; pipe
-  ([] '(list cq-this))
+(defn ^:cq/stream-aware ^:cq/nav-aware ??mapcat [f coll]
+  (mapcat f coll))
+
+(defmacro | ;; pipe
+  ([] '.)
   ([arg] arg)
   ([arg1 & args]
    `(->> ~arg1
          ~@(map (fn [arg]
-                  `(mapcat (fn [~'cq-this] ~arg)))
+                  `(??mapcat (fn [~'cq-this] ~arg)))
                 args))))
 
 (defn ^:cq/stream-aware ^:cq/nav-aware & ;; span
   ([] ())
   ([arg] arg)
   ([arg1 & args] (apply concat arg1 args)))
+
+;; same as (cq/apply-stream apply concat .)
+(defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
+  (mapcat (fn [coll]
+            (map-indexed (fn [i _] (cqi/nav-get coll i)) (cqi/navigate coll)))
+          stream-of-colls))
+
+(defn ^:cq/nav-aware pick [parent idx]
+  (cqi/nav-get parent idx))
+
+(defn ^:cq/nav-aware path [nav]
+  (cqi/chart nav))
+
+(defn ^:cq/stream-aware collect [stream]
+  (list (map cqi/navigate stream)))
+
+(defn ^:cq/stream-aware collect-into [targets stream]
+  (map #(into % stream) targets))
+
+(defn expand-form [form]
+  (let [form (if (seq? form)
+               (macroexpand form)
+               form)]
+    (cond
+      (seq? form)
+      (let [[op & args] form]
+        (case op
+          ;; special forms:
+          fn* `(fn* ~@(map (fn [[argv & body]] `(~argv ~@(map expand-form body))) args))
+
+          ;; default for function invokation
+          (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))
+                ex-args (mapv expand-form args)
+                nav-args (if nav-aware
+                           ex-args
+                           (mapv (fn [arg-form] `(map cqi/navigate ~arg-form)) ex-args))]
+            (if stream-aware
+              `(~op ~@nav-args)
+              (if-not (next args) ;; make one-arg cases easier to read
+                `(map ~op ~(first nav-args))
+                `(map #(apply ~op %) (combinations ~nav-args)))))))
+
+      (vector? form) (expand-form `(vector ~@form))
+      (map? form)    (expand-form `(array-map ~@(apply concat form)))
+
+      :else
+      (case form
+        . '(list cq-this)
+        [form]))))
+
+(defn go* [form]
+  `(let [~'cq-this nil] (map cqi/navigate ~(expand-form form))))
+
+(defmacro go [form]
+  (go* form))
+
+(comment
+
+  (go* '(| (& [1 2 3] [4 (+ 10 (& 5 100)) 6] [7 8 9])
+         (cqi/navigate (cqi/nav-get . (& 1 2)))))
+
+  (go (| (& [1 2 3] [4 (+ 10 (& 5 100)) 6] [7 8 9])
+         (cqi/navigate (cqi/nav-get . (& 1 2)))))
+
+  :end)
 
 (comment
   ;; goal: make following | macro work with go macro
@@ -50,62 +118,5 @@
               (let* [y (list . 10)]
                 (+ y 10)))
             .))
-
-  :end)
-
-;; same as (cq/apply-stream apply concat .)
-(defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
-  (mapcat (fn [coll]
-            (map-indexed (fn [i _] (cqi/nav-get coll i)) (cqi/navigate coll)))
-          stream-of-colls))
-
-(defn ^:cq/nav-aware pick [parent idx]
-  (cqi/nav-get parent idx))
-
-(defn ^:cq/nav-aware path [nav]
-  (cqi/chart nav))
-
-(defn ^:cq/stream-aware collect [stream]
-  (list (map cqi/navigate stream)))
-
-(defn ^:cq/stream-aware collect-into [targets stream]
-  (map #(into % stream) targets))
-
-(defn expand-form [form]
-  (cond
-    (seq? form)
-    (let [[op & args] form]
-      (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))
-            ex-args (mapv expand-form args)
-            nav-args (if nav-aware
-                       ex-args
-                       (mapv (fn [arg-form] `(map cqi/navigate ~arg-form)) ex-args))]
-        (if stream-aware
-          `(~op ~@nav-args)
-          (if-not (next args) ;; make one-arg cases easier to read
-            `(map ~op ~(first nav-args))
-            `(map #(apply ~op %) (combinations ~nav-args))))))
-
-    (vector? form) (expand-form `(vector ~@form))
-    (map? form)    (expand-form `(array-map ~@(apply concat form)))
-
-    :else
-    (case form
-      . '(list cq-this)
-      [form])))
-
-(defn go* [form]
-  `(map cqi/navigate ~(expand-form form)))
-
-(defmacro go [form]
-  (go* form))
-
-(comment
-
-  (go* '(| (& [1 2 3] [4 (+ 10 (& 5 100)) 6] [7 8 9])
-         (cqi/navigate (cqi/nav-get . (& 1 2)))))
-
-  (go (| (& [1 2 3] [4 (+ 10 (& 5 100)) 6] [7 8 9])
-         (cqi/navigate (cqi/nav-get . (& 1 2)))))
 
   :end)
