@@ -48,7 +48,7 @@
     cq-result))
 
 (defn test-all [tester]
-  (doseq [[test-key {:keys [jq cq]}] tests]
+  (doseq [[test-key {:keys [jq cq]}] (sort-by first tests)]
     (prn test-key)
     (tester test-key))
   :ok)
@@ -356,42 +356,42 @@
   (| [1 2 3]
      (first (collect (| (each .) (inc .))))))
 
-(deft t9 "[1,2,3] | first(.[])"
+(deft t09 "[1,2,3] | first(.[])"
   (| [1 2 3]
      (first (collect (each .)))))
 
-(deft t8 "[[1],[2],[3]] | .[] | .[0]"
+(deft t08 "[[1],[2],[3]] | .[] | .[0]"
   (| (& [[1] [2] [3]])
      (each .)
      (pick . 0)))
 
-(deft t7 "[1,2,3] | .[]"
+(deft t07 "[1,2,3] | .[]"
   (| (& [1 2 3]) (each .)))
 
-(deft t6 "1,2,3 | 99,empty,.+1"
+(deft t06 "1,2,3 | 99,empty,.+1"
   (| (& 1 2 3)
      (& 99 (&) (+ . 1))))
 
-(deft t5 "1,2,3 | 99,.+1"
+(deft t05 "1,2,3 | 99,.+1"
   (| (& 1 2 3)
      (& 99 (+ . 1))))
 
-(deft t4 "1,2,3 | 99,."
+(deft t04 "1,2,3 | 99,."
   (| (& 1 2 3)
      (& 99 .)))
 
-(deft t3  "1,2,3 | 4,5"
+(deft t03  "1,2,3 | 4,5"
   (| (& 1 2 3)
      (& 4 5)))
 
-(deft t2 "1,empty,3 | . + 1"
+(deft t02 "1,empty,3 | . + 1"
   (| (& 1 (&) 3)
      (+ . 1)))
 
-(deft t1 "[1,2,3] | first"
+(deft t01 "[1,2,3] | first"
   (| [1 2 3]
      (pick . 0)))
 
-(deft t0 "1,2,3 | . + 1"
+(deft t00 "1,2,3 | . + 1"
   (| (& 1 2 3)
      (+ . 1)))
