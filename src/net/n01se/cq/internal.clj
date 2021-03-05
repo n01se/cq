@@ -260,10 +260,7 @@
 ;;=== cq library of monadic functions and their constructors
 
 (def-mfc $ [& mfs] [x]
-  (list (mapcat #(cq-eval x %) mfs)))
-
-(def-mfc collect-into [target-mf src-mf] [x]
-  (map #(into % (cq-eval x src-mf)) (cq-eval x target-mf)))
+  (list (vec (mapcat #(cq-eval x %) mfs))))
 
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
 (defn ^:publish & ;; a.k.a. span or jq's comma
