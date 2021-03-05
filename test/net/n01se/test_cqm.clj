@@ -2,7 +2,8 @@
   (:require [clojure.test :as t]
             [net.n01se.test-cq :as tcq :refer [tests check-jq]]
             [net.n01se.cq.internal :as cqi]
-            [net.n01se.cq.macroish :as cqm :refer [go go* & | each pick collect path]]))
+            [net.n01se.cq.macroish :as cqm
+             :refer [go go* & | each pick collect path modify]]))
 
 (defn test-cqm [test-key]
   (let [{:keys [jq cq]} (get tests test-key)

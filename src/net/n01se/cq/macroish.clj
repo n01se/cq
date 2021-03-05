@@ -12,7 +12,7 @@
           [()]
           (reverse colls)))
 
-(defn ^:cq/stream-aware ^:cq/nav-aware ??mapcat [f coll]
+(defn ^:cq/stream-aware ^:cq/nav-aware ??mapcat [[f] coll]
   (mapcat f coll))
 
 (defmacro | ;; pipe
@@ -28,6 +28,16 @@
   ([] ())
   ([arg] arg)
   ([arg1 & args] (apply concat arg1 args)))
+
+(defn ^:cq/stream-aware ^:cq/nav-aware modify-fn
+  [[root] nav-stream [update-fn]]
+  (list
+   (reduce (fn [acc nav] (cqi/modify* nav acc (comp first update-fn)))
+           root nav-stream)))
+
+(defmacro modify [nav update]
+  ;; some versions before jq-1.6 use `last` instead of `first`:
+  `(modify-fn ~'. ~nav (fn [~'cq-this] ~update)))
 
 ;; same as (cq/apply-stream apply concat .)
 (defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
@@ -56,7 +66,10 @@
       (let [[op & args] form]
         (case op
           ;; special forms:
-          fn* `(fn* ~@(map (fn [[argv & body]] `(~argv ~@(map expand-form body))) args))
+          fn* (let [bodies (if (-> args first vector?) (list args) args)]
+                `[(fn* ~@(map (fn [[argv & body]] `(~argv ~@(map expand-form body)))
+                              bodies))])
+          def (let [[sym value] args] `(def ~sym (first ~(expand-form value))))
 
           ;; default for function invokation
           (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))

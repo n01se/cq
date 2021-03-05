@@ -152,6 +152,7 @@
 
 (defn nav-lens [parent lens]
   (reify
+    Object (toString [_] (str parent " -> " lens))
     INavigation
     (navigate [_] (lens-get lens (navigate parent)))
     (chart [_] (conj (chart parent) (lens-chart lens)))
@@ -162,6 +163,7 @@
   (let [idx (navigate idx)]
     (nav-lens parent
               (reify
+                Object (toString [_] (pr-str (list 'get idx)))
                 ILens
                 (lens-get [_ obj] (get obj idx))
                 (lens-put [_ obj newval] (assoc obj idx newval))
@@ -172,6 +174,7 @@
         end-idx (navigate end-idx)]
     (nav-lens parent
               (reify
+                Object (toString [_] (pr-str (list 'slice start-idx end-idx)))
                 ILens
                 (lens-get [_ obj]
                   (->> obj
