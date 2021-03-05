@@ -346,7 +346,7 @@
   (| 1 . .))
 
 (deft t12 "1 | first([.])"
-  (| 1 (first (collect [.]))))
+  (| 1 (first ($ [.]))))
 
 (deft t11 "1,2,3 | [4,.]"
   (| (& 1 2 3)
@@ -354,11 +354,11 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (| [1 2 3]
-     (first (collect (| (each .) (inc .))))))
+     (first ($ (| (each .) (inc .))))))
 
 (deft t09 "[1,2,3] | first(.[])"
   (| [1 2 3]
-     (first (collect (each .)))))
+     (first ($ (each .)))))
 
 (deft t08 "[[1],[2],[3]] | .[] | .[0]"
   (| (& [[1] [2] [3]])

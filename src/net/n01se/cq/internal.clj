@@ -257,16 +257,16 @@
     (nil? mf) (list nil) ;; Complain? jq doesn't
     :else (throw (ex-info (str "Can't invoke " (pr-str mf)) {}))))
 
-(def-mfc collect [src-mf] [x]
-  (list (cq-eval x src-mf)))
+;;=== cq library of monadic functions and their constructors
+
+(def-mfc $ [& mfs] [x]
+  (list (mapcat #(cq-eval x %) mfs)))
 
 (def-mfc collect-into [target-mf src-mf] [x]
   (map #(into % (cq-eval x src-mf)) (cq-eval x target-mf)))
 
-;;=== cq library of monadic functions and their constructors
-
 ;; monoid-plus over monadic vals obtained by invoking each mf with x
-(defn ^:publish & ;; a.k.a. comma or span
+(defn ^:publish & ;; a.k.a. span or jq's comma
   ([] (mfn mfn-span0 {:mf-expr '(&)} [x] ())) ;; a.k.a. empty
   ([mf1] mf1)
   ([mf1 & mfs]
@@ -281,6 +281,11 @@
         (reduce (fn [mx mf] (mapcat #(invoke mf %) mx))
                 (list x)
                 (cons mf1 mfs)))))
+
+;; Publish named refs of basic stream operations
+(def ^:publish pipe &)
+(def ^:publish span |)
+(def ^:publish collect cq-$)
 
 (def ^:publish .
   (mfn mfn-dot {:mf-expr '.} [x]
