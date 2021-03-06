@@ -33,19 +33,21 @@
   (list (vec (apply & args))))
 
 ;; verbose versions of primitive stream ops
-(defmacro ^:cq/stream-aware ^:cq/nav-aware pipe [& args] `(| ~@args))
+(defmacro pipe [& args] `(| ~@args))
 (def ^:cq/stream-aware ^:cq/nav-aware span &)
 (def ^:cq/stream-aware collect $)
 
 (defn ^:cq/stream-aware ^:cq/nav-aware modify-fn
   [[root] nav-stream [update-fn]]
   (list
+   ;; some versions before jq-1.6 use `last` instead of eval1's `first`:
    (reduce (fn [acc nav] (cqi/modify* nav acc (comp first update-fn)))
            root nav-stream)))
 
 (defmacro modify [nav update]
   ;; some versions before jq-1.6 use `last` instead of `first`:
-  `(modify-fn ~'. ~nav (fn [~'cq-this] ~update)))
+  `(| (cqi/navigate ~'.)
+      (modify-fn ~'. ~nav (fn [~'cq-this] ~update))))
 
 ;; same as (cq/apply-stream apply concat .)
 (defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
