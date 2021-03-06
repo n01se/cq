@@ -29,6 +29,14 @@
   ([arg] arg)
   ([arg1 & args] (apply concat arg1 args)))
 
+(defn ^:cq/stream-aware $ [& args]
+  (list (vec (apply & args))))
+
+;; verbose versions of primitive stream ops
+(defmacro ^:cq/stream-aware ^:cq/nav-aware pipe [& args] `(| ~@args))
+(def ^:cq/stream-aware ^:cq/nav-aware span &)
+(def ^:cq/stream-aware collect $)
+
 (defn ^:cq/stream-aware ^:cq/nav-aware modify-fn
   [[root] nav-stream [update-fn]]
   (list
@@ -50,12 +58,6 @@
 
 (defn ^:cq/nav-aware path [nav]
   (cqi/chart nav))
-
-(defn ^:cq/stream-aware collect [stream]
-  (list (map cqi/navigate stream)))
-
-(defn ^:cq/stream-aware collect-into [targets stream]
-  (map #(into % stream) targets))
 
 (defn expand-form [form]
   (let [form (if (seq? form)
