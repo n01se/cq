@@ -42,7 +42,7 @@
     :statements (compile (last args))
     :number (read-string (first args))
     :vector (if-let [v (first args)]
-              `(cq/collect-into [] ~(compile v))
+              `(cq/collect ~(compile v))
               [])
 
     :str    `(cq/str ~@(map compile args))
@@ -65,7 +65,7 @@
                 "empty" `(cq/&)
                 "first" (if (empty? args)
                           `(jq/jq-get . 0)
-                          `(cq/first ~@args))
+                          `(cq/first (cq/collect ~@args)))
                 "path" `(cq/path ~@args)
                 "select" `(cq/select cq/. ~@args)
                 "range" `(jq/jq-range ~@args)
