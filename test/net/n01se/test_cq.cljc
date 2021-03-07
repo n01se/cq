@@ -235,6 +235,14 @@
   (letfn [(foo [f] (| f f))]
     (| 5 (foo (* . 2)))))
 
+#_
+(deft t31.5 "def foo: .; def bar(x): . + x; 42 | [foo, bar(1,2)]"
+  (letfn [(foo ...)
+          (bar ...)]
+    (| 42
+       ($ (foo)
+          (bar (& 1 2))))))
+
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (| [3 4]
      (let [a ($ (each .) 9)]
@@ -247,13 +255,14 @@
 (deft t29 "5 as $a | $a"
   (let [$a 5] $a))
 
-(defn path-and-modify [p]
+(defn path-and-modify [x p]
   (cq/with-refer-all [cq]
-    (& (path p)
-       (modify p (+ . 1)))))
+    (| x
+       (& (path p)
+          (modify p (+ . 1))))))
 (deft t28 "def f(p): path(p),p |= .+1; [[5]] | f(.[0] | .[0])"
   (| [[5]]
-     (path-and-modify (-> . (pick 0) (pick 0)))))
+     (path-and-modify . (-> . (pick 0) (pick 0)))))
 
 (deft t27c "[[7],[8],[9]][] | .[] |= . + 1"
   (| (each [[7] [8] [9]])

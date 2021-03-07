@@ -61,6 +61,15 @@
 (defn ^:cq/nav-aware path [nav]
   (cqi/chart nav))
 
+(declare expand-form)
+
+(defn expand-let [bindings body]
+  (if (empty? bindings)
+    `(do ~@(map expand-form body))
+    (let [[sym value-form & more-bindings] bindings]
+      `(mapcat (fn [~sym] ~(expand-let more-bindings body))
+               ~(expand-form value-form)))))
+
 (defn expand-form [form]
   (let [form (if (seq? form)
                (macroexpand form)
@@ -74,6 +83,8 @@
                 `[(fn* ~@(map (fn [[argv & body]] `(~argv ~@(map expand-form body)))
                               bodies))])
           def (let [[sym value] args] `(def ~sym (first ~(expand-form value))))
+          let* (let [[bindings & body] args]
+                 (expand-let bindings body))
 
           ;; default for function invokation
           (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))
@@ -100,6 +111,9 @@
 
 (defmacro go [form]
   (go* form))
+
+(defmacro expand [form]
+  (expand-form form))
 
 (comment
 

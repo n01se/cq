@@ -3,7 +3,7 @@
             [net.n01se.test-cq :as tcq :refer [tests test-all check-jq]]
             [net.n01se.cq.internal :as cqi]
             [net.n01se.cq.macroish :as cqm
-             :refer [go go* & | $ each pick collect path modify]]))
+             :refer [go go* & | $ each pick collect path modify expand]]))
 
 (defn test-cqm [test-key]
   (let [{:keys [jq cq]} (get tests test-key)
@@ -11,7 +11,19 @@
     (assert (check-jq test-key cq-result jq))
     cq-result))
 
+(defn ^:cq/stream-aware ^:cq/nav-aware as-stream [streams]
+  (first streams))
+
+(defn ^:cq/stream-aware ^:cq/nav-aware path-and-modify [x p]
+  (expand
+   (let [x (as-stream x)
+         p (as-stream p)]
+     (| x
+        (& (path p)
+           (modify p (+ . 1)))))))
+
 #_
-(defn path-and-modify [p]
-  (& (path p)
-     (modify p (+ . 1))))
+(defn-cq path-and-modify [x p]
+  (| x
+     (& (path p)
+        (modify p (+ . 1)))))
