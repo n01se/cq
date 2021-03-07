@@ -60,7 +60,8 @@
       (prn jq)
       (when-not (= "%%FAIL" jq)
         (let [cq-mfn (-> jq jqc/compile-str)]
-          (assert (check-jq (cq/eval (json/parse-string input) cq-mfn)
+          (assert (check-jq jq
+                            (cq/eval (json/parse-string input) cq-mfn)
                             jq input)))))))
 
 
