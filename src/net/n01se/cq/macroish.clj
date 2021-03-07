@@ -40,14 +40,25 @@
 (defn ^:cq/stream-aware ^:cq/nav-aware modify-fn
   [[root] nav-stream [update-fn]]
   (list
-   ;; some versions before jq-1.6 use `last` instead of eval1's `first`:
+   ;; some versions before jq-1.6 use `last` instead of `first`:
    (reduce (fn [acc nav] (cqi/modify* nav acc (comp first update-fn)))
            root nav-stream)))
 
 (defmacro modify [nav update]
-  ;; some versions before jq-1.6 use `last` instead of `first`:
   `(| (cqi/navigate ~'.)
       (modify-fn ~'. ~nav (fn [~'cq-this] ~update))))
+
+(defn ^:cq/stream-aware ^:cq/nav-aware assign-fn
+  [[root] navs values]
+  (map (fn [value]
+         (reduce (fn [xval nav]
+                   (cqi/modify* nav xval (constantly value)))
+                 root
+                 navs))
+       values))
+
+(defmacro assign [nav value]
+  `(assign-fn ~'. ~nav ~value))
 
 ;; same as (cq/apply-stream apply concat .)
 (defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
@@ -83,8 +94,7 @@
                 `[(fn* ~@(map (fn [[argv & body]] `(~argv ~@(map expand-form body)))
                               bodies))])
           def (let [[sym value] args] `(def ~sym (first ~(expand-form value))))
-          let* (let [[bindings & body] args]
-                 (expand-let bindings body))
+          let* (let [[bindings & body] args] (expand-let bindings body))
 
           ;; default for function invokation
           (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))
