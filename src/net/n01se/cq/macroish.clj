@@ -12,8 +12,8 @@
           [()]
           (reverse colls)))
 
-(defn ^:cq/stream-aware ^:cq/nav-aware ??mapcat [[f] coll]
-  (mapcat f coll))
+(defn ^:cq/stream-aware ^:cq/nav-aware stream-mapcat [fs coll]
+  (mapcat (fn [f] (mapcat f coll)) fs))
 
 (defmacro | ;; pipe
   ([] '.)
@@ -21,7 +21,7 @@
   ([arg1 & args]
    `(->> ~arg1
          ~@(map (fn [arg]
-                  `(??mapcat (fn [~'cq-this] ~arg)))
+                  `(stream-mapcat (fn [~'cq-this] ~arg)))
                 args))))
 
 (defn ^:cq/stream-aware ^:cq/nav-aware & ;; span

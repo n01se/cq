@@ -117,6 +117,20 @@
 ;; select(rtn,foo)  if foo then rtn else empty end     (if foo rtn)
 ;; select(rtn,foo,...)  if foo then rtn else ... end   (if foo rtn ...)
 
+#_
+(deft t68 "([1],[2])[0] | {(\"haha\", \"nope\"): .}"
+  (cqm/stream-mapcat (fn [nav] {(& "haha" "nope") nav})
+                     (pick (& [1] [2]) 0)))
+
+(deft t67 "[1,2,3] | (. | .[1]) |= 10+."
+  (| [1 2 3]
+     (modify (| . (pick . 1))
+             (+ 10 .))))
+
+(deft t66 "[1,2,3] | . == [.[]]"
+  (| [1 2 3]
+     (= . (collect (each .)))))
+
 (deft t65
   #_"[1,-3,4,6,-1,0,-2] | [.[] | select(.>0) |= .*2]"
   #_"[1,-3,4,6,-1,0,-2] | [.[] | if . > 0 then . * 2 else . end]"
