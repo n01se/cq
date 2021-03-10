@@ -117,11 +117,11 @@
         . '(list cq-this)
         [form]))))
 
-(defn go* [form]
+(defn cq* [form]
   `(let [~'cq-this nil] (map cqi/navigate ~(expand-form form))))
 
-(defmacro go [form]
-  (go* form))
+(defmacro cq [form]
+  (cq* form))
 
 (defmacro expand [form]
   (expand-form form))

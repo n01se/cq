@@ -3,11 +3,11 @@
             [net.n01se.test-cq :as tcq :refer [tests test-all check-jq]]
             [net.n01se.cq.internal :as cqi]
             [net.n01se.cq.macroish :as cqm
-             :refer [go go* & | $ each pick collect path modify expand assign]]))
+             :refer [cq cq* & | $ each collect path pick modify expand assign]]))
 
 (defn test-cqm [test-key]
   (let [{:keys [jq cq]} (get tests test-key)
-        cq-result (eval (cqm/go* cq))]
+        cq-result (eval (cqm/cq* cq))]
     (assert (check-jq test-key cq-result jq))
     cq-result))
 
