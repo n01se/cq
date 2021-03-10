@@ -1,6 +1,7 @@
 (ns net.n01se.cq.macroish
   (:require [net.n01se.cq.internal :as cqi]
-            [net.n01se.cq :as cq]))
+            [net.n01se.cq :as cq]
+            [net.n01se.cq.jq-compat :as jq-compat]))
 
 (defn combinations
   "All the ways to take one item from each sequence"
@@ -63,11 +64,11 @@
 ;; same as (cq/apply-stream apply concat .)
 (defn ^:cq/stream-aware ^:cq/nav-aware each [stream-of-colls]
   (mapcat (fn [coll]
-            (map-indexed (fn [i _] (cqi/nav-get coll i)) (cqi/navigate coll)))
+            (map-indexed (fn [i _] (jq-compat/nav-get coll i)) (cqi/navigate coll)))
           stream-of-colls))
 
 (defn ^:cq/nav-aware pick [parent idx]
-  (cqi/nav-get parent idx))
+  (jq-compat/nav-get parent idx))
 
 (defn ^:cq/nav-aware path [nav]
   (cqi/chart nav))
