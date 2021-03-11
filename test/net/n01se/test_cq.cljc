@@ -171,7 +171,7 @@
 (deft t60 "[8,7,6,5,4] | .[1:4] |= [.[] | .+10]"
   (| [8 7 6 5 4]
      (modify (slice . 1 4)
-             ($ (+ (each .) 10)))))
+             (collect (+ (each .) 10)))))
 
 (deft t59 "[8,7,6,5,4] | .[1:4] |= []"
   (| [8 7 6 5 4] (modify (slice . 1 4) [])))
@@ -255,12 +255,12 @@
   (letfn [(foo ...)
           (bar ...)]
     (| 42
-       ($ (foo)
+       (collect (foo)
           (bar (& 1 2))))))
 
 (deft t31 "[3,4] | [.[],9] as $a | .[],$a[]"
   (| [3 4]
-     (let [a ($ (each .) 9)]
+     (let [a (collect (each .) 9)]
        (& (each .) (| a (each .))))))
 
 (deft t30  "(1,2,3) as $a | $a + 1"
@@ -370,7 +370,7 @@
   (| 1 . .))
 
 (deft t12 "1 | first([.])"
-  (| 1 (first ($ [.]))))
+  (| 1 (first (collect [.]))))
 
 (deft t11 "1,2,3 | [4,.]"
   (| (& 1 2 3)
@@ -378,11 +378,11 @@
 
 (deft t10 "[1,2,3] | first(.[] | . + 1)"
   (| [1 2 3]
-     (first ($ (| (each .) (inc .))))))
+     (first (collect (| (each .) (inc .))))))
 
 (deft t09 "[1,2,3] | first(.[])"
   (| [1 2 3]
-     (first ($ (each .)))))
+     (first (collect (each .)))))
 
 (deft t08 "[[1],[2],[3]] | .[] | .[0]"
   (| (& [[1] [2] [3]])

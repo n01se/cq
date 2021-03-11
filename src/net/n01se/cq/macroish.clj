@@ -30,13 +30,8 @@
   ([arg] arg)
   ([arg1 & args] (apply concat arg1 args)))
 
-(defn ^:cq/stream-aware $ [& args]
+(defn ^:cq/stream-aware collect [& args]
   (list (vec (apply & args))))
-
-;; verbose versions of primitive stream ops
-(defmacro pipe [& args] `(| ~@args))
-(def ^:cq/stream-aware ^:cq/nav-aware span &)
-(def ^:cq/stream-aware collect $)
 
 (defn ^:cq/stream-aware ^:cq/nav-aware modify-fn
   [[root] nav-stream [update-fn]]
