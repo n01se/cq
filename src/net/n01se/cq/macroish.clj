@@ -68,6 +68,9 @@
 (defn ^:cq/nav-aware path [nav]
   (cqi/chart nav))
 
+(defmacro select [then pred]
+  `(if ~pred ~then (&)))
+
 (declare expand-form)
 
 (defn expand-let [bindings body]
@@ -91,6 +94,11 @@
                               bodies))])
           def (let [[sym value] args] `(def ~sym (first ~(expand-form value))))
           let* (let [[bindings & body] args] (expand-let bindings body))
+          if (let [[pred then else] args]
+               ;; we choose not to cache then or else, yet.
+               `(mapcat (fn [b#]
+                          (if b# ~(expand-form then) ~(expand-form else)))
+                        ~(expand-form pred)))
 
           ;; default for function invokation
           (let [{:keys [cq/stream-aware cq/nav-aware] :as m} (meta (ns-resolve *ns* op))
