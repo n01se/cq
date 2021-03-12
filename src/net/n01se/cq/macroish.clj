@@ -126,6 +126,22 @@
 (defmacro cq [form]
   (cq* form))
 
+(defn cq|* [& forms]
+  (let [input (gensym "input-")]
+    `(fn [rf#]
+       (fn
+         ([] (rf#))
+         ([result#] (rf# result#))
+         ([result# ~input]
+          (reduce rf#
+                  result#
+                  ~(expand-form `(| ~input ~@forms))))))))
+
+(defmacro cq|
+  "Implied top-level pipe, returns a Clojure transducer"
+  [& forms]
+  (apply cq|* forms))
+
 (defmacro expand [form]
   (expand-form form))
 
