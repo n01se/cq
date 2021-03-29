@@ -14,10 +14,12 @@
   (apply concat arg))
 
 (defn ^::stream-aware & [& args]
-  (each args))
+  (apply concat args))
 
 (defn ^::stream-aware collect [& args]
   args)
+
+(declare cq*)
 
 (defmacro | [& body]
   (if (zero? (count body))
@@ -27,7 +29,7 @@
                   `(^::stream-aware (fn [~'cq-dot] ~(cq* segment))))
                 (rest body)))))
 
-(defn combine
+(defn explode
   "All the ways to take one item from each sequence"
   [& colls]
   (reduce (fn [combos coll]
@@ -55,9 +57,9 @@
                 cq-args (map cq* args)]
             (cond
               stream-aware `(~op ~@cq-args)
-              (every? vector? cq-args) `(~op ~@(each cq-args))
+              (every? vector? cq-args) `[(~op ~@(apply concat cq-args))] ;; (+ [1] [2]) => (+ 1 2)
               (= 1 (count cq-args)) `(map ~op ~@cq-args)
-              :else `(map (partial apply ~op) (combine ~@cq-args))))))
+              :else `(map (partial apply ~op) (explode ~@cq-args))))))
 
       (vector? form) (cq* `(vector ~@form))
       (map? form) (cq* `(array-map ~@(apply concat form)))
