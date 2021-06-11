@@ -22,8 +22,12 @@
 
 (def ^:private analyze ana/analyze)
 
-(def ^:cq each nil)
-(def ^:cq & list)
+(def ^:cq each identity)
+
+(defmacro &
+  ([] `(each []))
+  ([x] x)
+  ([x & xs] `(each [~x ~@xs])))
 
 (defn ^:private cq? [ast]
   (doto
