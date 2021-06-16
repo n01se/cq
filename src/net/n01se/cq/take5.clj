@@ -22,13 +22,6 @@
 
 (def ^:private analyze ana/analyze)
 
-(def ^:cq each identity)
-
-(defmacro &
-  ([] `(each []))
-  ([x] x)
-  ([x & xs] `(each [~x ~@xs])))
-
 (defn ^:private cq? [ast]
   (doto
     (assoc ast
@@ -47,11 +40,11 @@
 (defn ^:private annotate [ast]
   (ast/postwalk ast cq?))
 
-(defn ^:private transform [ast]
-  ast)
-
 (def ^:private emit emi/emit-form)
 
+(defn ^:cq each& [& xs] (apply concat xs))
+(defmacro & [& xs] `(each& ~@xs))
+(defmacro each [xs] `(each& ~@xs))
 (defmacro | [])
 
 (defmacro collect [form]
@@ -61,7 +54,6 @@
       (-> form
           analyze
           annotate
-          transform
           emit))))
 
 ;; Uses
