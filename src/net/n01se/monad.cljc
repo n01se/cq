@@ -1,6 +1,8 @@
 (ns net.n01se.monad
   (:require [net.n01se.cq :as cq]))
 
+;; Experiments with monads. Not actually used by cq.
+
 (def identity-monad
   [(fn unit [x] x)
    (fn bind [mx f] (f mx))
@@ -20,8 +22,8 @@
   [list
    (fn bind [mx f] (mapcat f mx))
 
-   (#'cq/comma #'cq/dot #'cq/dot)
-   (#'cq/pipe #'cq/all (#'cq/cq-first #'cq/dot))
+   (#'cq/span #'cq/. #'cq/.)
+   (#'cq/pipe #'cq/each (#'cq/first #'cq/.))
    [42]])
    
 (def maybe-monad
